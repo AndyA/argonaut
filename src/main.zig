@@ -1,16 +1,10 @@
-const PROG = (
-    \\Line 1
-    \\Line 2
-    \\Line 3
-);
-
 pub const ShadowProperty = struct {
     const Self = @This();
     const NextMap = std.StringHashMapUnmanaged(Self);
 
     ancestor: ?*const Self,
     name: []const u8,
-    next: NextMap = NextMap{},
+    next: NextMap = .{},
     index: u32,
 
     pub fn initRoot() !Self {
@@ -73,8 +67,9 @@ pub const JSONNode = union(enum) {
     string: []const u8,
     array: []const Self,
     object: []const Self,
-    // The first element in an object's slice is the object's shadow class. This
-    // is an attempt to minimise the size of individual JSONNodes - most of which
+
+    // The first element in an object's slice is its shadow class. This is an
+    // attempt to minimise the size of individual JSONNodes - most of which
     // are the size of a slice.
     class: *const ShadowProperty,
 
