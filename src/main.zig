@@ -127,7 +127,8 @@ test JSONNode {
 
     var pi = try root.getNext(alloc, "pi");
     var message = try pi.getNext(alloc, "message");
-    const tags = try message.getNext(alloc, "tags");
+    var tags = try message.getNext(alloc, "tags");
+    const checked = try tags.getNext(alloc, "checked");
 
     const arr_body = [_]JSONNode{
         .{ .string = "zig" },
@@ -136,10 +137,11 @@ test JSONNode {
     };
 
     const obj_body = [_]JSONNode{
-        .{ .class = tags },
+        .{ .class = checked },
         .{ .number = "3.14" },
         .{ .string = "Hello!" },
         .{ .array = &arr_body },
+        .{ .false = {} },
     };
 
     const obj = JSONNode{ .object = &obj_body };
