@@ -2,6 +2,7 @@ pub const ShadowProperty = struct {
     const Self = @This();
     const NextMap = std.StringHashMapUnmanaged(Self);
     const RootIndex = std.math.maxInt(u32);
+    const ctx = std.hash_map.StringContext{};
 
     parent: ?*const Self = null,
     name: []const u8 = "$",
@@ -23,11 +24,13 @@ pub const ShadowProperty = struct {
     }
 
     pub fn nextClass(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
-        const slot = try self.next.getOrPut(alloc, name); // todo dup
+        const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
+            const key_name = try alloc.dupe(u8, name);
+            slot.key_ptr.* = key_name;
             slot.value_ptr.* = Self{
                 .parent = self,
-                .name = try alloc.dupe(u8, name),
+                .name = key_name,
                 .index = self.index +% 1,
             };
         }
