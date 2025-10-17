@@ -1,59 +1,58 @@
 pub const ShadowProperty = struct {
     const Self = @This();
     const NextMap = std.StringHashMapUnmanaged(Self);
+    const RootIndex = std.math.maxInt(u32);
 
-    ancestor: ?*const Self,
-    name: []const u8,
+    parent: ?*const Self = null,
+    name: []const u8 = "$",
     next: NextMap = .{},
-    index: u32,
+    index: u32 = RootIndex,
 
-    pub fn initRoot() !Self {
-        return Self{
-            .ancestor = null,
-            .name = "$",
-            .index = std.math.maxInt(u32),
-        };
+    pub fn isRoot(self: Self) bool {
+        return self.index == RootIndex;
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         var iter = self.next.valueIterator();
         while (iter.next()) |v| {
-            v.deinit(allocator);
+            v.deinit(alloc);
         }
-        self.next.deinit(allocator);
+        if (!self.isRoot())
+            alloc.free(self.name);
+        self.next.deinit(alloc);
     }
 
-    pub fn getNext(self: *Self, allocator: std.mem.Allocator, name: []const u8) !*Self {
-        const gop = try self.next.getOrPut(allocator, name);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = Self{
-                .ancestor = self,
-                .name = name,
+    pub fn nextClass(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
+        const slot = try self.next.getOrPut(alloc, name); // todo dup
+        if (!slot.found_existing) {
+            slot.value_ptr.* = Self{
+                .parent = self,
+                .name = try alloc.dupe(u8, name),
                 .index = self.index +% 1,
             };
         }
-        return gop.value_ptr;
+        return slot.value_ptr;
     }
 };
 
 test ShadowProperty {
     const alloc = std.testing.allocator;
-    var root = try ShadowProperty.initRoot();
+    var root = ShadowProperty{};
     defer root.deinit(alloc);
 
     try std.testing.expectEqual(root.name, "$");
 
-    var foo1 = try root.getNext(alloc, "foo");
+    var foo1 = try root.nextClass(alloc, "foo");
     try std.testing.expectEqual(foo1.index, 0);
-    try std.testing.expectEqual(foo1.ancestor, &root);
+    try std.testing.expectEqual(foo1.parent, &root);
 
-    const bar1 = try foo1.getNext(alloc, "bar");
+    const bar1 = try foo1.nextClass(alloc, "bar");
     try std.testing.expectEqual(bar1.index, 1);
-    try std.testing.expectEqual(bar1.ancestor, foo1);
+    try std.testing.expectEqual(bar1.parent, foo1);
 
-    var foo2 = try root.getNext(alloc, "foo");
+    var foo2 = try root.nextClass(alloc, "foo");
     try std.testing.expectEqual(foo1, foo2);
-    const bar2 = try foo2.getNext(alloc, "bar");
+    const bar2 = try foo2.nextClass(alloc, "bar");
     try std.testing.expectEqual(bar1, bar2);
 }
 
@@ -79,8 +78,8 @@ pub const JSONNode = union(enum) {
         class: *const ShadowProperty,
     ) std.Io.Writer.Error!void {
         if (class.index > 0) {
-            assert(class.ancestor != null);
-            try format_object(o, w, class.ancestor.?);
+            assert(class.parent != null);
+            try format_object(o, w, class.parent.?);
             try w.print(",", .{});
         }
         try w.print("\"{s}\":", .{class.name});
@@ -117,13 +116,13 @@ pub const JSONNode = union(enum) {
 
 test JSONNode {
     const alloc = std.testing.allocator;
-    var root = try ShadowProperty.initRoot();
+    var root = ShadowProperty{};
     defer root.deinit(alloc);
 
-    var pi = try root.getNext(alloc, "pi");
-    var message = try pi.getNext(alloc, "message");
-    var tags = try message.getNext(alloc, "tags");
-    const checked = try tags.getNext(alloc, "checked");
+    var pi = try root.nextClass(alloc, "pi");
+    var message = try pi.nextClass(alloc, "message");
+    var tags = try message.nextClass(alloc, "tags");
+    const checked = try tags.nextClass(alloc, "checked");
 
     const arr_body = [_]JSONNode{
         .{ .string = "zig" },
@@ -144,19 +143,7 @@ test JSONNode {
 }
 
 pub fn main() !void {
-    var r_buf: [256]u8 = undefined;
-    var r = std.fs.File.stdin().reader(&r_buf);
-
-    while (true) {
-        const res = try r.interface.takeDelimiter('\n');
-        if (res) |ln| {
-            std.debug.print("Line: \"{s}\"\n", .{ln});
-        } else {
-            break;
-        }
-    }
-
-    std.debug.print("Done!\n", .{});
+    std.debug.print("Jelly!\n", .{});
 }
 
 const std = @import("std");
