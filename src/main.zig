@@ -6,7 +6,7 @@ pub const ObjectClass = struct {
     names: []const []const u8,
 
     pub fn init(alloc: std.mem.Allocator, shadow: *const ShadowClass) !Self {
-        const size = shadow.index +% 1;
+        const size = shadow.size();
 
         var names = try alloc.alloc([]const u8, size);
         errdefer alloc.free(names);
@@ -15,8 +15,8 @@ pub const ObjectClass = struct {
             try index_map.ensureTotalCapacity(alloc, size);
 
         var class: *const ShadowClass = shadow;
-        while (!class.isRoot()) : (class = class.parent.?) {
-            assert(class.index >= 0 and class.index < size);
+        while (class.size() > 0) : (class = class.parent.?) {
+            assert(class.index < size);
             names[class.index] = class.name;
             index_map.putAssumeCapacity(class.name, class.index);
         }
@@ -45,8 +45,8 @@ pub const ShadowClass = struct {
     next: NextMap = .empty,
     index: u32 = RootIndex,
 
-    pub fn isRoot(self: *const Self) bool {
-        return self.index == RootIndex;
+    pub fn size(self: *const Self) u32 {
+        return self.index +% 1;
     }
 
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
@@ -57,7 +57,7 @@ pub const ShadowClass = struct {
         if (self.object_class) |*class| {
             class.deinit(alloc);
         }
-        if (!self.isRoot())
+        if (self.size() > 0)
             alloc.free(self.name);
         self.next.deinit(alloc);
     }
@@ -117,25 +117,29 @@ pub const JSONNode = union(enum) {
     const Self = @This();
 
     null,
-    false,
-    true,
+    boolean: bool,
     number: []const u8,
     string: []const u8,
+    records: []const Self,
     array: []const Self,
     object: []const Self,
 
-    // The first element in an object's slice is its shadow class. This is an
-    // attempt to minimise the size of individual JSONNodes - most of which
-    // are the size of a slice.
+    // The first element in an object's slice is its shadow class. This to minimise
+    // the size of individual JSONNodes - most of which are the size of a slice.
     class: *const ObjectClass,
 
     pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
             .null => try w.print("null", .{}),
-            .false => try w.print("false", .{}),
-            .true => try w.print("true", .{}),
+            .boolean => |b| try w.print("{any}", .{b}),
             .number => |n| try w.print("{s}", .{n}),
             .string => |s| try w.print("\"{s}\"", .{s}),
+            .records => |m| {
+                for (m) |item| {
+                    try item.format(w);
+                    try w.print("\n", .{});
+                }
+            },
             .array => |a| {
                 try w.print("[", .{});
                 for (a, 0..) |item, i| {
@@ -147,6 +151,7 @@ pub const JSONNode = union(enum) {
             .object => |o| {
                 assert(o.len >= 1);
                 const class = o[0].class;
+                assert(o.len == class.names.len + 1);
                 try w.print("{{", .{});
                 for (class.names, 1..) |n, i| {
                     try w.print("\"{s}\":", .{n});
@@ -182,11 +187,241 @@ test JSONNode {
         .{ .number = "3.14" },
         .{ .string = "Hello!" },
         .{ .array = &arr_body },
-        .{ .false = {} },
+        .{ .boolean = false },
     };
 
     const obj = JSONNode{ .object = &obj_body };
     std.debug.print("{f}\n", .{obj});
+}
+
+const ParserState = struct {
+    const Self = @This();
+    pub const NoMark = std.math.maxInt(u32);
+
+    src: []const u8 = undefined,
+    pos: u32 = 0,
+    mark: u32 = NoMark,
+    line: u32 = 1,
+    col: u32 = 0,
+
+    pub fn eof(self: *const Self) bool {
+        assert(self.pos <= self.src.len);
+        return self.pos == self.src.len;
+    }
+
+    pub fn peek(self: *const Self) u8 {
+        assert(self.pos < self.src.len);
+        return self.src[self.pos];
+    }
+
+    pub fn next(self: *Self) u8 {
+        assert(self.pos < self.src.len);
+        defer self.pos += 1;
+        return self.src[self.pos];
+    }
+
+    pub fn view(self: *const Self) []const u8 {
+        return self.src[self.pos..];
+    }
+
+    pub fn setMark(self: *Self) void {
+        assert(self.mark == NoMark);
+        self.mark = self.pos;
+    }
+
+    pub fn takeMarked(self: *Self) []const u8 {
+        assert(self.mark != NoMark);
+        defer self.mark = NoMark;
+        return self.src[self.mark..self.pos];
+    }
+
+    pub fn skipSpace(self: *Self) void {
+        while (true) {
+            if (self.eof()) break;
+            const nc = self.peek();
+            if (!std.ascii.isWhitespace(nc)) break;
+            if (nc == '\n') {
+                @branchHint(.unlikely);
+                self.line += 1;
+                self.col = 0;
+            }
+            _ = self.next();
+        }
+    }
+
+    pub fn skipDigits(self: *Self) void {
+        while (true) {
+            if (self.eof()) return;
+            const nc = self.peek();
+            if (!std.ascii.isDigit(nc)) break;
+            _ = self.next();
+        }
+    }
+
+    pub fn checkLiteral(self: *Self, comptime lit: []const u8) bool {
+        if (!std.mem.eql(u8, lit, self.view())) {
+            @branchHint(.unlikely);
+            return false;
+        }
+        self.pos += lit.len;
+        return true;
+    }
+};
+
+pub const JSONParserError = error{
+    UnexpectedEndOfInput,
+    SyntaxError,
+    MissingString,
+    MissingQuotes,
+    JunkAfterInput,
+};
+
+pub const JSONParser = struct {
+    const Self = @This();
+    const NodeList = std.ArrayListUnmanaged(JSONNode);
+
+    work_alloc: std.mem.Allocator,
+    shadow_root: ShadowClass = .{},
+    state: ParserState = .{},
+    parsing: bool = false,
+    assembly: NodeList = .empty,
+    scratch: std.ArrayListUnmanaged(NodeList) = .empty,
+
+    pub fn init(work_alloc: std.mem.Allocator) !Self {
+        return Self{ .work_alloc = work_alloc };
+    }
+
+    pub fn deinit(self: *Self) void {
+        _ = self;
+    }
+
+    fn parseLiteral(
+        self: *Self,
+        comptime lit: []const u8,
+        comptime node: JSONNode,
+    ) JSONParserError!JSONNode {
+        if (!self.state.checkLiteral(lit)) {
+            @branchHint(.unlikely);
+            return JSONParserError.SyntaxError;
+        }
+        return node;
+    }
+
+    fn checkEof(self: *const Self) JSONParserError!void {
+        if (self.state.eof()) {
+            @branchHint(.unlikely);
+            return JSONParserError.SyntaxError;
+        }
+    }
+
+    fn parseString(self: *Self) JSONParserError!JSONNode {
+        _ = self.state.next();
+        self.state.setMark();
+        while (true) {
+            if (self.state.eof()) {
+                @branchHint(.unlikely);
+                return JSONParserError.MissingQuotes;
+            }
+            const nc = self.state.next();
+            if (nc == '\"') {
+                @branchHint(.unlikely);
+                break;
+            }
+            if (nc == '\\') {
+                @branchHint(.unlikely);
+                try self.checkEof();
+                _ = self.state.next();
+            }
+        }
+        const marked = self.state.takeMarked();
+        return .{ .string = marked[0 .. marked.len - 1] };
+    }
+
+    fn checkDigits(self: *Self) JSONParserError!void {
+        try self.checkEof();
+        self.state.skipDigits();
+    }
+
+    fn parseNumber(self: *Self) JSONParserError!JSONNode {
+        self.state.setMark();
+        const nc = self.state.next();
+        if (nc == '-') {
+            try self.checkEof();
+            _ = self.state.next();
+        }
+        try self.checkDigits();
+        if (!self.state.eof() and self.state.peek() == '.') {
+            _ = self.state.next();
+            try self.checkDigits();
+        }
+        if (!self.state.eof()) {
+            const exp = self.state.peek();
+            if (exp == 'E' or exp == 'e') {
+                _ = self.state.next();
+                try self.checkEof();
+                const sgn = self.state.peek();
+                if (sgn == '+' or sgn == '-')
+                    _ = self.state.next();
+                try self.checkDigits();
+            }
+        }
+        return .{ .number = self.state.takeMarked() };
+    }
+
+    fn parseValue(self: *Self, depth: u32) JSONParserError!JSONNode {
+        self.state.skipSpace();
+        if (self.state.eof()) return JSONParserError.UnexpectedEndOfInput;
+        const nc = self.state.peek();
+        const node: JSONNode = switch (nc) {
+            'n' => try self.parseLiteral("null", .{ .null = {} }),
+            'f' => try self.parseLiteral("false", .{ .boolean = false }),
+            't' => try self.parseLiteral("true", .{ .boolean = true }),
+            '"' => try self.parseString(),
+            '-', '0'...'9' => try self.parseNumber(),
+            else => return JSONParserError.SyntaxError,
+        };
+        _ = depth;
+        return node;
+    }
+
+    fn startParsing(self: *Self, src: []const u8) void {
+        assert(!self.parsing);
+        self.state = ParserState{};
+        self.state.src = src;
+        self.assembly.items.len = 0;
+        self.parsing = true;
+    }
+
+    fn stopParsing(self: *Self) void {
+        assert(self.parsing);
+        self.parsing = false;
+    }
+
+    fn checkForJunk(self: *Self) JSONParserError!void {
+        self.state.skipSpace();
+        if (!self.state.eof()) return JSONParserError.JunkAfterInput;
+    }
+
+    pub fn parseSingleToAssembly(self: *Self, src: []const u8) JSONParserError!JSONNode {
+        self.startParsing(src);
+        defer self.stopParsing();
+        const node = try self.parseValue(0);
+        try self.checkForJunk();
+        return node;
+    }
+};
+
+test JSONParser {
+    const alloc = std.testing.allocator;
+    var p = try JSONParser.init(alloc);
+    defer p.deinit();
+
+    const r1 = try p.parseSingleToAssembly("null");
+    try std.testing.expectEqualDeep(JSONNode{ .null = {} }, r1);
+    const r2 = try p.parseSingleToAssembly("\"Hello, World!\"");
+    try std.testing.expectEqualDeep(JSONNode{ .string = "Hello, World!" }, r2);
+    const r3 = try p.parseSingleToAssembly("3.1415");
+    try std.testing.expectEqualDeep(JSONNode{ .number = "3.1415" }, r3);
 }
 
 pub fn main() !void {
