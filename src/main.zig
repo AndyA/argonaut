@@ -268,17 +268,21 @@ const ParserState = struct {
     }
 };
 
-pub const JSONParserError = error{
-    UnexpectedEndOfInput,
-    SyntaxError,
-    MissingString,
-    MissingQuotes,
-    JunkAfterInput,
-};
-
 pub const JSONParser = struct {
     const Self = @This();
     const NodeList = std.ArrayListUnmanaged(JSONNode);
+
+    pub const Error = error{
+        UnexpectedEndOfInput,
+        SyntaxError,
+        MissingString,
+        MissingKey,
+        MissingQuotes,
+        MissingComma,
+        MissingColon,
+        JunkAfterInput,
+        OutOfMemory,
+    };
 
     work_alloc: std.mem.Allocator,
     shadow_root: ShadowClass = .{},
@@ -292,35 +296,43 @@ pub const JSONParser = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        _ = self;
+        for (self.scratch.items) |*s| {
+            s.deinit(self.work_alloc);
+        }
+        self.scratch.deinit(self.work_alloc);
+        self.assembly.deinit(self.work_alloc);
+    }
+
+    fn checkEof(self: *const Self) Error!void {
+        if (self.state.eof()) {
+            @branchHint(.unlikely);
+            return Error.UnexpectedEndOfInput;
+        }
+    }
+
+    fn checkMore(self: *Self) Error!void {
+        self.state.skipSpace();
+        try self.checkEof();
     }
 
     fn parseLiteral(
         self: *Self,
         comptime lit: []const u8,
         comptime node: JSONNode,
-    ) JSONParserError!JSONNode {
+    ) Error!JSONNode {
         if (!self.state.checkLiteral(lit)) {
             @branchHint(.unlikely);
-            return JSONParserError.SyntaxError;
+            return Error.SyntaxError;
         }
         return node;
     }
 
-    fn checkEof(self: *const Self) JSONParserError!void {
-        if (self.state.eof()) {
-            @branchHint(.unlikely);
-            return JSONParserError.SyntaxError;
-        }
-    }
-
-    fn parseString(self: *Self) JSONParserError!JSONNode {
-        _ = self.state.next();
+    fn parseStringBody(self: *Self) Error![]const u8 {
         self.state.setMark();
         while (true) {
             if (self.state.eof()) {
                 @branchHint(.unlikely);
-                return JSONParserError.MissingQuotes;
+                return Error.MissingQuotes;
             }
             const nc = self.state.next();
             if (nc == '\"') {
@@ -334,15 +346,27 @@ pub const JSONParser = struct {
             }
         }
         const marked = self.state.takeMarked();
-        return .{ .string = marked[0 .. marked.len - 1] };
+        return marked[0 .. marked.len - 1];
     }
 
-    fn checkDigits(self: *Self) JSONParserError!void {
+    fn parseKey(self: *Self) Error![]const u8 {
+        if (self.state.next() != '"')
+            return Error.MissingKey;
+        return self.parseStringBody();
+    }
+
+    fn parseString(self: *Self) Error!JSONNode {
+        _ = self.state.next();
+        const marked = try self.parseStringBody();
+        return .{ .string = marked };
+    }
+
+    fn checkDigits(self: *Self) Error!void {
         try self.checkEof();
         self.state.skipDigits();
     }
 
-    fn parseNumber(self: *Self) JSONParserError!JSONNode {
+    fn parseNumber(self: *Self) Error!JSONNode {
         self.state.setMark();
         const nc = self.state.next();
         if (nc == '-') {
@@ -355,22 +379,113 @@ pub const JSONParser = struct {
             try self.checkDigits();
         }
         if (!self.state.eof()) {
+            @branchHint(.likely);
             const exp = self.state.peek();
             if (exp == 'E' or exp == 'e') {
+                @branchHint(.unlikely);
                 _ = self.state.next();
                 try self.checkEof();
                 const sgn = self.state.peek();
-                if (sgn == '+' or sgn == '-')
+                if (sgn == '+' or sgn == '-') {
+                    @branchHint(.likely);
                     _ = self.state.next();
+                }
                 try self.checkDigits();
             }
         }
         return .{ .number = self.state.takeMarked() };
     }
 
-    fn parseValue(self: *Self, depth: u32) JSONParserError!JSONNode {
+    fn getScratch(self: *Self, depth: u32) Error!*NodeList {
+        while (self.scratch.items.len <= depth) {
+            try self.scratch.append(self.work_alloc, .empty);
+        }
+        var scratch = &self.scratch.items[depth];
+        scratch.items.len = 0;
+        return scratch;
+    }
+
+    fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
+        const start = self.assembly.items.len;
+        try self.assembly.appendSlice(self.work_alloc, nodes);
+        return self.assembly.items[start..];
+    }
+
+    fn parseArray(self: *Self, depth: u32) Error!JSONNode {
+        _ = self.state.next();
+        try self.checkMore();
+        var scratch = try self.getScratch(depth);
+        // Empty array is a special case
+        if (self.state.peek() == ']') {
+            _ = self.state.next();
+        } else {
+            while (true) {
+                const node = try self.parseValue(depth + 1);
+                try scratch.append(self.work_alloc, node);
+                try self.checkMore();
+                const nc = self.state.next();
+                if (nc == ']') {
+                    break;
+                }
+                if (nc != ',') {
+                    @branchHint(.unlikely);
+                    return Error.MissingComma;
+                }
+                try self.checkMore();
+            }
+        }
+
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .array = items };
+    }
+
+    fn parseObject(self: *Self, depth: u32) Error!JSONNode {
+        _ = self.state.next();
+        try self.checkMore();
+
+        var scratch = try self.getScratch(depth);
+        // Make a space for the class
+        try scratch.append(self.work_alloc, .{ .null = {} });
+        var shadow = &self.shadow_root;
+
+        // Empty object is a special case
+        if (self.state.peek() == '}') {
+            _ = self.state.next();
+        } else {
+            while (true) {
+                const key = try self.parseKey();
+                shadow = try shadow.getNext(self.work_alloc, key);
+                try self.checkMore();
+                if (self.state.next() != ':')
+                    return Error.MissingColon;
+
+                try self.checkMore();
+                const node = try self.parseValue(depth + 1);
+                try scratch.append(self.work_alloc, node);
+                try self.checkMore();
+                const nc = self.state.next();
+                if (nc == '}') {
+                    break;
+                }
+                if (nc != ',') {
+                    @branchHint(.unlikely);
+                    return Error.MissingComma;
+                }
+                try self.checkMore();
+            }
+        }
+
+        // Plug the class in
+        const class = try shadow.getClass(self.work_alloc);
+        scratch.items[0] = .{ .class = class };
+
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .object = items };
+    }
+
+    fn parseValue(self: *Self, depth: u32) Error!JSONNode {
         self.state.skipSpace();
-        if (self.state.eof()) return JSONParserError.UnexpectedEndOfInput;
+        try self.checkEof();
         const nc = self.state.peek();
         const node: JSONNode = switch (nc) {
             'n' => try self.parseLiteral("null", .{ .null = {} }),
@@ -378,9 +493,11 @@ pub const JSONParser = struct {
             't' => try self.parseLiteral("true", .{ .boolean = true }),
             '"' => try self.parseString(),
             '-', '0'...'9' => try self.parseNumber(),
-            else => return JSONParserError.SyntaxError,
+            '[' => try self.parseArray(depth),
+            '{' => try self.parseObject(depth),
+            else => return Error.SyntaxError,
         };
-        _ = depth;
+
         return node;
     }
 
@@ -397,12 +514,12 @@ pub const JSONParser = struct {
         self.parsing = false;
     }
 
-    fn checkForJunk(self: *Self) JSONParserError!void {
+    fn checkForJunk(self: *Self) Error!void {
         self.state.skipSpace();
-        if (!self.state.eof()) return JSONParserError.JunkAfterInput;
+        if (!self.state.eof()) return Error.JunkAfterInput;
     }
 
-    pub fn parseSingleToAssembly(self: *Self, src: []const u8) JSONParserError!JSONNode {
+    pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
         self.startParsing(src);
         defer self.stopParsing();
         const node = try self.parseValue(0);
@@ -420,8 +537,15 @@ test JSONParser {
     try std.testing.expectEqualDeep(JSONNode{ .null = {} }, r1);
     const r2 = try p.parseSingleToAssembly("\"Hello, World!\"");
     try std.testing.expectEqualDeep(JSONNode{ .string = "Hello, World!" }, r2);
-    const r3 = try p.parseSingleToAssembly("3.1415");
+    const r3 = try p.parseSingleToAssembly(" 3.1415 ");
     try std.testing.expectEqualDeep(JSONNode{ .number = "3.1415" }, r3);
+    const r4 = try p.parseSingleToAssembly("[1,2,3]");
+    const elts = [_]JSONNode{
+        .{ .number = "1" },
+        .{ .number = "2" },
+        .{ .number = "3" },
+    };
+    try std.testing.expectEqualDeep(JSONNode{ .array = &elts }, r4);
 }
 
 pub fn main() !void {
