@@ -1,15 +1,29 @@
-pub const ShadowProperty = struct {
+pub const ObjectClass = struct {
     const Self = @This();
-    const NextMap = std.StringHashMapUnmanaged(Self);
-    const RootIndex = std.math.maxInt(u32);
+    pub const IndexMap = std.StringHashMapUnmanaged(u32);
+
+    index_map: IndexMap = .empty,
+    names: []const []const u8,
+
+    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+        self.index_map.deinit(alloc);
+        alloc.free(self.names);
+    }
+};
+
+pub const ShadowClass = struct {
+    const Self = @This();
+    pub const NextMap = std.StringHashMapUnmanaged(Self);
+    pub const RootIndex = std.math.maxInt(u32);
     const ctx = std.hash_map.StringContext{};
 
     parent: ?*const Self = null,
+    object_class: ?ObjectClass = null,
     name: []const u8 = "$",
-    next: NextMap = .{},
+    next: NextMap = .empty,
     index: u32 = RootIndex,
 
-    pub fn isRoot(self: Self) bool {
+    pub fn isRoot(self: *const Self) bool {
         return self.index == RootIndex;
     }
 
@@ -18,12 +32,15 @@ pub const ShadowProperty = struct {
         while (iter.next()) |v| {
             v.deinit(alloc);
         }
+        if (self.object_class) |*class| {
+            class.deinit(alloc);
+        }
         if (!self.isRoot())
             alloc.free(self.name);
         self.next.deinit(alloc);
     }
 
-    pub fn nextClass(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
+    pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
         const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
             const key_name = try alloc.dupe(u8, name);
@@ -36,27 +53,59 @@ pub const ShadowProperty = struct {
         }
         return slot.value_ptr;
     }
+
+    pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {
+        if (self.object_class != null) {
+            return &self.object_class.?;
+        }
+
+        const size = self.index +% 1;
+
+        var names = try alloc.alloc([]const u8, size);
+        errdefer alloc.free(names);
+        var index_map: ObjectClass.IndexMap = .empty;
+        try index_map.ensureTotalCapacity(alloc, size);
+
+        var class: *const Self = self;
+        while (!class.isRoot()) : (class = class.parent.?) {
+            assert(class.index >= 0 and class.index < size);
+            names[class.index] = class.name;
+            index_map.putAssumeCapacity(class.name, class.index);
+        }
+
+        self.object_class = ObjectClass{
+            .index_map = index_map,
+            .names = names,
+        };
+
+        return &self.object_class.?;
+    }
 };
 
-test ShadowProperty {
+test ShadowClass {
     const alloc = std.testing.allocator;
-    var root = ShadowProperty{};
+    var root = ShadowClass{};
     defer root.deinit(alloc);
 
     try std.testing.expectEqual(root.name, "$");
 
-    var foo1 = try root.nextClass(alloc, "foo");
+    var foo1 = try root.getNext(alloc, "foo");
     try std.testing.expectEqual(foo1.index, 0);
     try std.testing.expectEqual(foo1.parent, &root);
 
-    const bar1 = try foo1.nextClass(alloc, "bar");
+    var bar1 = try foo1.getNext(alloc, "bar");
     try std.testing.expectEqual(bar1.index, 1);
     try std.testing.expectEqual(bar1.parent, foo1);
 
-    var foo2 = try root.nextClass(alloc, "foo");
+    var foo2 = try root.getNext(alloc, "foo");
     try std.testing.expectEqual(foo1, foo2);
-    const bar2 = try foo2.nextClass(alloc, "bar");
+    var bar2 = try foo2.getNext(alloc, "bar");
     try std.testing.expectEqual(bar1, bar2);
+
+    const cls1 = try bar1.getClass(alloc);
+    const cls2 = try bar2.getClass(alloc);
+
+    try std.testing.expectEqual(cls1, cls2);
 }
 
 pub const JSONNode = union(enum) {
@@ -73,21 +122,7 @@ pub const JSONNode = union(enum) {
     // The first element in an object's slice is its shadow class. This is an
     // attempt to minimise the size of individual JSONNodes - most of which
     // are the size of a slice.
-    class: *const ShadowProperty,
-
-    fn format_object(
-        o: []const Self,
-        w: *std.Io.Writer,
-        class: *const ShadowProperty,
-    ) std.Io.Writer.Error!void {
-        if (class.index > 0) {
-            assert(class.parent != null);
-            try format_object(o, w, class.parent.?);
-            try w.print(",", .{});
-        }
-        try w.print("\"{s}\":", .{class.name});
-        try o[class.index].format(w);
-    }
+    class: *const ObjectClass,
 
     pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
         switch (self) {
@@ -107,9 +142,12 @@ pub const JSONNode = union(enum) {
             .object => |o| {
                 assert(o.len >= 1);
                 const class = o[0].class;
-                assert(class.index == o.len - 2);
                 try w.print("{{", .{});
-                try format_object(o[1..], w, class);
+                for (class.names, 1..) |n, i| {
+                    try w.print("\"{s}\":", .{n});
+                    try o[i].format(w);
+                    if (i < o.len - 1) try w.print(",", .{});
+                }
                 try w.print("}}", .{});
             },
             .class => unreachable,
@@ -119,13 +157,14 @@ pub const JSONNode = union(enum) {
 
 test JSONNode {
     const alloc = std.testing.allocator;
-    var root = ShadowProperty{};
+    var root = ShadowClass{};
     defer root.deinit(alloc);
 
-    var pi = try root.nextClass(alloc, "pi");
-    var message = try pi.nextClass(alloc, "message");
-    var tags = try message.nextClass(alloc, "tags");
-    const checked = try tags.nextClass(alloc, "checked");
+    var pi = try root.getNext(alloc, "pi");
+    var message = try pi.getNext(alloc, "message");
+    var tags = try message.getNext(alloc, "tags");
+    var checked = try tags.getNext(alloc, "checked");
+    const class = try checked.getClass(alloc);
 
     const arr_body = [_]JSONNode{
         .{ .string = "zig" },
@@ -134,7 +173,7 @@ test JSONNode {
     };
 
     const obj_body = [_]JSONNode{
-        .{ .class = checked },
+        .{ .class = class },
         .{ .number = "3.14" },
         .{ .string = "Hello!" },
         .{ .array = &arr_body },
