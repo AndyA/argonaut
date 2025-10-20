@@ -120,7 +120,7 @@ pub const JSONNode = union(enum) {
     boolean: bool,
     number: []const u8,
     string: []const u8,
-    records: []const Self,
+    multi: []const Self,
     array: []const Self,
     object: []const Self,
 
@@ -134,7 +134,7 @@ pub const JSONNode = union(enum) {
             .boolean => |b| try w.print("{any}", .{b}),
             .number => |n| try w.print("{s}", .{n}),
             .string => |s| try w.print("\"{s}\"", .{s}),
-            .records => |m| {
+            .multi => |m| {
                 for (m) |item| {
                     try item.format(w);
                     try w.print("\n", .{});
@@ -301,6 +301,7 @@ pub const JSONParser = struct {
         }
         self.scratch.deinit(self.work_alloc);
         self.assembly.deinit(self.work_alloc);
+        self.shadow_root.deinit(self.work_alloc);
     }
 
     fn checkEof(self: *const Self) Error!void {
@@ -501,6 +502,24 @@ pub const JSONParser = struct {
         return node;
     }
 
+    fn parseMulti(self: *Self, depth: u32) Error!JSONNode {
+        var scratch = try self.getScratch(depth);
+        while (true) {
+            self.state.skipSpace();
+            if (self.state.eof()) break;
+            if (self.state.peek() == ',') {
+                _ = self.state.next();
+                self.state.skipSpace();
+                if (self.state.eof()) break;
+            }
+            const node = try self.parseValue(depth + 1);
+            try scratch.append(self.work_alloc, node);
+        }
+
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .multi = items };
+    }
+
     fn startParsing(self: *Self, src: []const u8) void {
         assert(!self.parsing);
         self.state = ParserState{};
@@ -516,7 +535,10 @@ pub const JSONParser = struct {
 
     fn checkForJunk(self: *Self) Error!void {
         self.state.skipSpace();
-        if (!self.state.eof()) return Error.JunkAfterInput;
+        if (!self.state.eof()) {
+            std.debug.print("junk: {s}\n", .{self.state.view()});
+            return Error.JunkAfterInput;
+        }
     }
 
     pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
@@ -526,6 +548,14 @@ pub const JSONParser = struct {
         try self.checkForJunk();
         return node;
     }
+
+    pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
+        self.startParsing(src);
+        defer self.stopParsing();
+        const node = try self.parseMulti(0);
+        self.checkForJunk() catch assert(false);
+        return node;
+    }
 };
 
 test JSONParser {
@@ -533,19 +563,29 @@ test JSONParser {
     var p = try JSONParser.init(alloc);
     defer p.deinit();
 
-    const r1 = try p.parseSingleToAssembly("null");
-    try std.testing.expectEqualDeep(JSONNode{ .null = {} }, r1);
-    const r2 = try p.parseSingleToAssembly("\"Hello, World!\"");
-    try std.testing.expectEqualDeep(JSONNode{ .string = "Hello, World!" }, r2);
-    const r3 = try p.parseSingleToAssembly(" 3.1415 ");
-    try std.testing.expectEqualDeep(JSONNode{ .number = "3.1415" }, r3);
-    const r4 = try p.parseSingleToAssembly("[1,2,3]");
-    const elts = [_]JSONNode{
-        .{ .number = "1" },
-        .{ .number = "2" },
-        .{ .number = "3" },
+    const cases = [_][]const u8{
+        \\null
+        ,
+        \\"Hello, World"
+        ,
+        \\[1,2,3]
+        ,
+        \\{"tags":[1,2,3]}
+        ,
+        \\{"id":{"name":"Andy","email":"andy@example.com"}}
     };
-    try std.testing.expectEqualDeep(JSONNode{ .array = &elts }, r4);
+
+    for (cases) |case| {
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        defer w.deinit();
+
+        const res = try p.parseSingleToAssembly(case);
+        try w.writer.print("{f}", .{res});
+        var output = w.toArrayList();
+        defer output.deinit(alloc);
+        try std.testing.expect(std.mem.eql(u8, case, output.items));
+    }
 }
 
 pub fn main() !void {
