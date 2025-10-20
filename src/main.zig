@@ -5,6 +5,28 @@ pub const ObjectClass = struct {
     index_map: IndexMap = .empty,
     names: []const []const u8,
 
+    pub fn init(alloc: std.mem.Allocator, shadow: *const ShadowClass) !Self {
+        const size = shadow.index +% 1;
+
+        var names = try alloc.alloc([]const u8, size);
+        errdefer alloc.free(names);
+        var index_map: ObjectClass.IndexMap = .empty;
+        if (size > 0)
+            try index_map.ensureTotalCapacity(alloc, size);
+
+        var class: *const ShadowClass = shadow;
+        while (!class.isRoot()) : (class = class.parent.?) {
+            assert(class.index >= 0 and class.index < size);
+            names[class.index] = class.name;
+            index_map.putAssumeCapacity(class.name, class.index);
+        }
+
+        return Self{
+            .index_map = index_map,
+            .names = names,
+        };
+    }
+
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         self.index_map.deinit(alloc);
         alloc.free(self.names);
@@ -55,28 +77,8 @@ pub const ShadowClass = struct {
     }
 
     pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {
-        if (self.object_class != null) {
-            return &self.object_class.?;
-        }
-
-        const size = self.index +% 1;
-
-        var names = try alloc.alloc([]const u8, size);
-        errdefer alloc.free(names);
-        var index_map: ObjectClass.IndexMap = .empty;
-        try index_map.ensureTotalCapacity(alloc, size);
-
-        var class: *const Self = self;
-        while (!class.isRoot()) : (class = class.parent.?) {
-            assert(class.index >= 0 and class.index < size);
-            names[class.index] = class.name;
-            index_map.putAssumeCapacity(class.name, class.index);
-        }
-
-        self.object_class = ObjectClass{
-            .index_map = index_map,
-            .names = names,
-        };
+        if (self.object_class == null)
+            self.object_class = try ObjectClass.init(alloc, self);
 
         return &self.object_class.?;
     }
@@ -106,6 +108,9 @@ test ShadowClass {
     const cls2 = try bar2.getClass(alloc);
 
     try std.testing.expectEqual(cls1, cls2);
+
+    const empty = try root.getClass(alloc);
+    try std.testing.expectEqualDeep(0, empty.names.len);
 }
 
 pub const JSONNode = union(enum) {
