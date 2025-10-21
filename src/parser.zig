@@ -320,7 +320,7 @@ pub const JSONParser = struct {
     ) Error!JSONNode {
         try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
 
-        RETRY: while (true) {
+        RESTART: while (true) {
             self.startParsing(src);
             defer self.stopParsing();
 
@@ -329,7 +329,7 @@ pub const JSONParser = struct {
 
             const node = parser(self, 0) catch |err| {
                 switch (err) {
-                    Error.RestartParser => continue :RETRY,
+                    Error.RestartParser => continue :RESTART,
                     else => return err,
                 }
             };
