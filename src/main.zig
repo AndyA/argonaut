@@ -444,18 +444,22 @@ pub const JSONParser = struct {
 
     fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
         const start = self.assembly.items.len;
-        const old_ptr = self.assembly.items.ptr;
-        try self.assembly.ensureUnusedCapacity(self.assembly_alloc, nodes.len);
+        const needed = self.assembly.items.len + nodes.len;
+        if (self.assembly.capacity < needed) {
+            const old_ptr = self.assembly.items.ptr;
+            try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
 
-        // Track the maximum capacity so that if we give our assembly away we can
-        // pre-size the replacement appropriately.
-        self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
+            // Track the maximum capacity so that if we give our assembly away we can
+            // pre-size the replacement appropriately.
+            self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
 
-        // If the assembly buffer has moved, restart the parser to correct pointers
-        // into the buffer. This will tend to stop happening once the buffer has
-        // grown large enough.
-        if (self.assembly.items.ptr != old_ptr)
-            return Error.RestartParser;
+            // If the assembly buffer has moved, restart the parser to correct pointers
+            // into the buffer. This will tend to stop happening once the buffer has
+            // grown large enough.
+            if (self.assembly.items.ptr != old_ptr) {
+                return Error.RestartParser;
+            }
+        }
 
         self.assembly.appendSliceAssumeCapacity(nodes);
 
@@ -597,7 +601,11 @@ pub const JSONParser = struct {
     const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
     const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
 
-    fn parseWith(self: *Self, src: []const u8, comptime parser: ParseDepthFn) Error!JSONNode {
+    fn parseWithParser(
+        self: *Self,
+        src: []const u8,
+        comptime parser: ParseDepthFn,
+    ) Error!JSONNode {
         try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
 
         RETRY: while (true) {
@@ -642,11 +650,11 @@ pub const JSONParser = struct {
     }
 
     pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseWith(src, Self.parseValue);
+        return self.parseWithParser(src, Self.parseValue);
     }
 
     pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseWith(src, Self.parseMulti);
+        return self.parseWithParser(src, Self.parseMulti);
     }
 
     pub fn parseSingleOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
@@ -723,7 +731,7 @@ fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
         const end = std.time.microTimestamp();
         const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
         const rate = @as(f64, @floatFromInt(src.len)) / seconds / 1_000_000;
-        std.debug.print("  {d:>3}: {d:>8.3}s {d:>8.3}MB/s\n", .{ i, seconds, rate });
+        std.debug.print("  {d:>3}: {d:>8.3}s {d:>8.3} MB/s\n", .{ i, seconds, rate });
     }
 }
 
@@ -741,7 +749,7 @@ pub fn main() !void {
         defer alloc.free(src);
         // std.debug.print("{s}\n", .{arg});
         std.debug.print("{s}: {d} bytes\n", .{ arg, src.len });
-        try p.assembly.ensureTotalCapacity(alloc, src.len);
+        // try p.assembly.ensureTotalCapacity(alloc, src.len);
         try benchmark(&p, src, 5);
     }
 }

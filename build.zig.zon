@@ -1,7 +1,7 @@
 .{
-    .name = .scratch,
+    .name = .argonaut,
     .version = "0.0.0",
-    .fingerprint = 0x90455a7723a9eff3, // Changing this has security and trust implications.
+    .fingerprint = 0x9bcb78810769e182, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.0-dev.1108+27212a3e6",
     .dependencies = .{
     },
