@@ -282,6 +282,7 @@ pub const JSONParser = struct {
         MissingColon,
         JunkAfterInput,
         OutOfMemory,
+        RestartParser,
     };
 
     work_alloc: std.mem.Allocator,
@@ -408,7 +409,17 @@ pub const JSONParser = struct {
 
     fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
         const start = self.assembly.items.len;
-        try self.assembly.appendSlice(self.work_alloc, nodes);
+        const old_ptr = self.assembly.items.ptr;
+        try self.assembly.ensureUnusedCapacity(self.work_alloc, nodes.len);
+
+        // If the assembly buffer has moved, restart the parser to correct pointers
+        // into the buffer. This will tend to stop happening once the buffer has
+        // grown large enough.
+        if (self.assembly.items.ptr != old_ptr)
+            return Error.RestartParser;
+
+        self.assembly.appendSliceAssumeCapacity(nodes);
+
         return self.assembly.items[start..];
     }
 
@@ -539,22 +550,29 @@ pub const JSONParser = struct {
             return Error.JunkAfterInput;
     }
 
+    const ParseFn = fn (p: *Self, d: u32) Error!JSONNode;
+
+    fn parseWith(self: *Self, src: []const u8, comptime parser: ParseFn) Error!JSONNode {
+        RETRY: while (true) {
+            self.startParsing(src);
+            defer self.stopParsing();
+            const node = parser(self, 0) catch |err| {
+                switch (err) {
+                    Error.RestartParser => continue :RETRY,
+                    else => return err,
+                }
+            };
+            try self.checkForJunk();
+            return node;
+        }
+    }
+
     pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        self.startParsing(src);
-        // Hack
-        try self.assembly.ensureTotalCapacity(self.work_alloc, 8192);
-        defer self.stopParsing();
-        const node = try self.parseValue(0);
-        try self.checkForJunk();
-        return node;
+        return self.parseWith(src, Self.parseValue);
     }
 
     pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        self.startParsing(src);
-        defer self.stopParsing();
-        const node = try self.parseMulti(0);
-        self.checkForJunk() catch assert(false);
-        return node;
+        return self.parseWith(src, Self.parseMulti);
     }
 };
 
@@ -576,7 +594,9 @@ test JSONParser {
         ,
         \\[{"id":{"name":"Andy","email":"andy@example.com"}}]
         ,
-        \\[{"id":{"name":"Andy","email":"andy@example.com"}},{"id":{"name":"Smoo","email":"smoo@example.com"}}]
+        \\[{"id":{"name":"Andy","email":"andy@example.com"}},
+        ++
+            \\{"id":{"name":"Smoo","email":"smoo@example.com"}}]
     };
 
     for (cases) |case| {
