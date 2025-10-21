@@ -271,6 +271,8 @@ const ParserState = struct {
 pub const JSONParser = struct {
     const Self = @This();
     const NodeList = std.ArrayListUnmanaged(JSONNode);
+    pub const Assembly = std.ArrayList(JSONNode);
+    const Allocator = std.mem.Allocator;
 
     pub const Error = error{
         UnexpectedEndOfInput,
@@ -285,15 +287,24 @@ pub const JSONParser = struct {
         RestartParser,
     };
 
-    work_alloc: std.mem.Allocator,
+    work_alloc: Allocator,
+    assembly_alloc: Allocator,
     shadow_root: ShadowClass = .{},
     state: ParserState = .{},
     parsing: bool = false,
     assembly: NodeList = .empty,
+    assembly_capacity: usize = 0,
     scratch: std.ArrayListUnmanaged(NodeList) = .empty,
 
-    pub fn init(work_alloc: std.mem.Allocator) !Self {
-        return Self{ .work_alloc = work_alloc };
+    pub fn init(work_alloc: Allocator) !Self {
+        return Self.initCustom(work_alloc, work_alloc);
+    }
+
+    pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) !Self {
+        return Self{
+            .work_alloc = work_alloc,
+            .assembly_alloc = assembly_alloc,
+        };
     }
 
     pub fn deinit(self: *Self) void {
@@ -301,8 +312,14 @@ pub const JSONParser = struct {
             s.deinit(self.work_alloc);
         }
         self.scratch.deinit(self.work_alloc);
-        self.assembly.deinit(self.work_alloc);
         self.shadow_root.deinit(self.work_alloc);
+        self.assembly.deinit(self.assembly_alloc);
+    }
+
+    pub fn setAssemblyAllocator(self: *Self, alloc: Allocator) void {
+        self.assembly.deinit(self.assembly_alloc);
+        self.assembly = .empty;
+        self.assembly_alloc = alloc;
     }
 
     fn checkEof(self: *const Self) Error!void {
@@ -410,7 +427,11 @@ pub const JSONParser = struct {
     fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
         const start = self.assembly.items.len;
         const old_ptr = self.assembly.items.ptr;
-        try self.assembly.ensureUnusedCapacity(self.work_alloc, nodes.len);
+        try self.assembly.ensureUnusedCapacity(self.assembly_alloc, nodes.len);
+
+        // Track the maximum capacity so that if we give our assembly away we can
+        // pre-size the replacement appropriately.
+        self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
 
         // If the assembly buffer has moved, restart the parser to correct pointers
         // into the buffer. This will tend to stop happening once the buffer has
@@ -550,21 +571,51 @@ pub const JSONParser = struct {
             return Error.JunkAfterInput;
     }
 
-    const ParseFn = fn (p: *Self, d: u32) Error!JSONNode;
+    pub fn takeAssembly(self: *Self) Error!Assembly {
+        return self.assembly.toManaged(self.assembly_alloc);
+    }
 
-    fn parseWith(self: *Self, src: []const u8, comptime parser: ParseFn) Error!JSONNode {
+    const ParseFn = fn (self: *Self) Error!JSONNode;
+    const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
+
+    fn parseWith(self: *Self, src: []const u8, comptime parser: ParseDepthFn) Error!JSONNode {
+        try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
+
         RETRY: while (true) {
             self.startParsing(src);
             defer self.stopParsing();
+            // A space for the root object
+            try self.assembly.append(self.work_alloc, .{ .null = {} });
+
             const node = parser(self, 0) catch |err| {
                 switch (err) {
                     Error.RestartParser => continue :RETRY,
                     else => return err,
                 }
             };
+
             try self.checkForJunk();
+            // Make the root the first item of the assembly
+            self.assembly.items[0] = node;
             return node;
         }
+    }
+
+    fn parseOwner(
+        self: *Self,
+        alloc: Allocator,
+        src: []const u8,
+        comptime parser: ParseFn,
+    ) Error!Assembly {
+        const old_assembly = self.assembly;
+        const old_alloc = self.assembly_alloc;
+        defer {
+            self.assembly = old_assembly;
+            self.assembly_alloc = old_alloc;
+        }
+        self.assembly_alloc = alloc;
+        _ = try parser(src);
+        return self.takeAssembly();
     }
 
     pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
@@ -573,6 +624,14 @@ pub const JSONParser = struct {
 
     pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
         return self.parseWith(src, Self.parseMulti);
+    }
+
+    pub fn parseSingleOwned(self: *Self, alloc: Allocator, src: []const u8) Error!Assembly {
+        return self.parseOwner(alloc, src, Self.parseSingleToAssembly);
+    }
+
+    pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!Assembly {
+        return self.parseOwner(alloc, src, Self.parseMultiToAssembly);
     }
 };
 
