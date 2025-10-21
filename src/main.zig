@@ -1,5 +1,5 @@
 const std = @import("std");
-const JSONParser = @import("./parser.zig");
+const JSONParser = @import("./parser.zig").JSONParser;
 
 test {
     _ = @import("./parser.zig");
