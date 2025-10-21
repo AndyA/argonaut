@@ -23,7 +23,7 @@ pub const JSONParser = struct {
     state: ParserState = .{},
     parsing: bool = false,
     assembly: NodeList = .empty,
-    assembly_capacity: usize = 0,
+    assembly_capacity: usize = 8192,
     scratch: std.ArrayListUnmanaged(NodeList) = .empty,
 
     pub fn init(work_alloc: Allocator) !Self {
@@ -313,7 +313,7 @@ pub const JSONParser = struct {
     const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
     const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
 
-    fn parseWithParser(
+    fn parseUsing(
         self: *Self,
         src: []const u8,
         comptime parser: ParseDepthFn,
@@ -361,16 +361,16 @@ pub const JSONParser = struct {
         return self.takeAssembly();
     }
 
-    pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseWithParser(src, Self.parseValue);
+    pub fn parseToAssembly(self: *Self, src: []const u8) Error!JSONNode {
+        return self.parseUsing(src, Self.parseValue);
     }
 
     pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseWithParser(src, Self.parseMulti);
+        return self.parseUsing(src, Self.parseMulti);
     }
 
-    pub fn parseSingleOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-        return self.parseWithAllocator(alloc, src, Self.parseSingleToAssembly);
+    pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+        return self.parseWithAllocator(alloc, src, Self.parseToAssembly);
     }
 
     pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
@@ -419,7 +419,7 @@ test JSONParser {
         var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         defer w.deinit();
 
-        const res = try p.parseSingleToAssembly(case);
+        const res = try p.parseToAssembly(case);
         try w.writer.print("{f}", .{res});
         var output = w.toArrayList();
         defer output.deinit(alloc);
@@ -431,7 +431,7 @@ test JSONParser {
         var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         defer w.deinit();
 
-        var res = try p.parseSingleOwned(alloc, case);
+        var res = try p.parseOwned(alloc, case);
 
         defer res.deinit(alloc);
         try w.writer.print("{f}", .{res.items[0]});
