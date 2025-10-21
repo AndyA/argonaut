@@ -191,7 +191,16 @@ test JSONNode {
     };
 
     const obj = JSONNode{ .object = &obj_body };
-    std.debug.print("{f}\n", .{obj});
+
+    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+    defer w.deinit();
+    try w.writer.print("{f}", .{obj});
+    var output = w.toArrayList();
+    defer output.deinit(alloc);
+    try std.testing.expect(std.mem.eql(u8,
+        \\{"pi":3.14,"message":"Hello!","tags":["zig","json","parser"],"checked":false}
+    , output.items));
 }
 
 const ParserState = struct {
@@ -270,8 +279,7 @@ const ParserState = struct {
 
 pub const JSONParser = struct {
     const Self = @This();
-    const NodeList = std.ArrayListUnmanaged(JSONNode);
-    pub const Assembly = std.ArrayList(JSONNode);
+    pub const NodeList = std.ArrayListUnmanaged(JSONNode);
     const Allocator = std.mem.Allocator;
 
     pub const Error = error{
@@ -571,11 +579,12 @@ pub const JSONParser = struct {
             return Error.JunkAfterInput;
     }
 
-    pub fn takeAssembly(self: *Self) Error!Assembly {
-        return self.assembly.toManaged(self.assembly_alloc);
+    pub fn takeAssembly(self: *Self) Error!NodeList {
+        defer self.assembly = .empty;
+        return self.assembly;
     }
 
-    const ParseFn = fn (self: *Self) Error!JSONNode;
+    const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
     const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
 
     fn parseWith(self: *Self, src: []const u8, comptime parser: ParseDepthFn) Error!JSONNode {
@@ -584,8 +593,9 @@ pub const JSONParser = struct {
         RETRY: while (true) {
             self.startParsing(src);
             defer self.stopParsing();
+
             // A space for the root object
-            try self.assembly.append(self.work_alloc, .{ .null = {} });
+            try self.assembly.append(self.assembly_alloc, .{ .null = {} });
 
             const node = parser(self, 0) catch |err| {
                 switch (err) {
@@ -595,26 +605,28 @@ pub const JSONParser = struct {
             };
 
             try self.checkForJunk();
+
             // Make the root the first item of the assembly
             self.assembly.items[0] = node;
             return node;
         }
     }
 
-    fn parseOwner(
+    fn parseWithAllocator(
         self: *Self,
         alloc: Allocator,
         src: []const u8,
         comptime parser: ParseFn,
-    ) Error!Assembly {
+    ) Error!NodeList {
         const old_assembly = self.assembly;
         const old_alloc = self.assembly_alloc;
         defer {
             self.assembly = old_assembly;
             self.assembly_alloc = old_alloc;
         }
+        self.assembly = .empty;
         self.assembly_alloc = alloc;
-        _ = try parser(src);
+        _ = try parser(self, src);
         return self.takeAssembly();
     }
 
@@ -626,12 +638,12 @@ pub const JSONParser = struct {
         return self.parseWith(src, Self.parseMulti);
     }
 
-    pub fn parseSingleOwned(self: *Self, alloc: Allocator, src: []const u8) Error!Assembly {
-        return self.parseOwner(alloc, src, Self.parseSingleToAssembly);
+    pub fn parseSingleOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+        return self.parseWithAllocator(alloc, src, Self.parseSingleToAssembly);
     }
 
-    pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!Assembly {
-        return self.parseOwner(alloc, src, Self.parseMultiToAssembly);
+    pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+        return self.parseWithAllocator(alloc, src, Self.parseMultiToAssembly);
     }
 };
 
@@ -665,6 +677,20 @@ test JSONParser {
 
         const res = try p.parseSingleToAssembly(case);
         try w.writer.print("{f}", .{res});
+        var output = w.toArrayList();
+        defer output.deinit(alloc);
+        try std.testing.expect(std.mem.eql(u8, case, output.items));
+    }
+
+    for (cases) |case| {
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        defer w.deinit();
+
+        var res = try p.parseSingleOwned(alloc, case);
+
+        defer res.deinit(alloc);
+        try w.writer.print("{f}", .{res.items[0]});
         var output = w.toArrayList();
         defer output.deinit(alloc);
         try std.testing.expect(std.mem.eql(u8, case, output.items));
