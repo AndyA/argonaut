@@ -535,14 +535,14 @@ pub const JSONParser = struct {
 
     fn checkForJunk(self: *Self) Error!void {
         self.state.skipSpace();
-        if (!self.state.eof()) {
-            std.debug.print("junk: {s}\n", .{self.state.view()});
+        if (!self.state.eof())
             return Error.JunkAfterInput;
-        }
     }
 
     pub fn parseSingleToAssembly(self: *Self, src: []const u8) Error!JSONNode {
         self.startParsing(src);
+        // Hack
+        try self.assembly.ensureTotalCapacity(self.work_alloc, 8192);
         defer self.stopParsing();
         const node = try self.parseValue(0);
         try self.checkForJunk();
@@ -573,6 +573,10 @@ test JSONParser {
         \\{"tags":[1,2,3]}
         ,
         \\{"id":{"name":"Andy","email":"andy@example.com"}}
+        ,
+        \\[{"id":{"name":"Andy","email":"andy@example.com"}}]
+        ,
+        \\[{"id":{"name":"Andy","email":"andy@example.com"}},{"id":{"name":"Smoo","email":"smoo@example.com"}}]
     };
 
     for (cases) |case| {
