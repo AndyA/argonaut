@@ -211,11 +211,15 @@ const ParserState = struct {
     pos: u32 = 0,
     mark: u32 = NoMark,
     line: u32 = 1,
-    col: u32 = 0,
+    line_start: u32 = 0,
 
     pub fn eof(self: *const Self) bool {
         assert(self.pos <= self.src.len);
         return self.pos == self.src.len;
+    }
+
+    pub fn col(self: *const Self) u32 {
+        return self.pos - self.line_start;
     }
 
     pub fn peek(self: *const Self) u8 {
@@ -252,7 +256,7 @@ const ParserState = struct {
             if (nc == '\n') {
                 @branchHint(.unlikely);
                 self.line += 1;
-                self.col = 0;
+                self.line_start = self.pos;
             }
             _ = self.next();
         }
@@ -268,11 +272,16 @@ const ParserState = struct {
     }
 
     pub fn checkLiteral(self: *Self, comptime lit: []const u8) bool {
-        if (!std.mem.eql(u8, lit, self.view())) {
+        const end: u32 = self.pos + @as(u32, lit.len);
+        if (end > self.src.len) {
             @branchHint(.unlikely);
             return false;
         }
-        self.pos += lit.len;
+        if (!std.mem.eql(u8, lit, self.src[self.pos..end])) {
+            @branchHint(.unlikely);
+            return false;
+        }
+        self.pos = end;
         return true;
     }
 };
@@ -285,6 +294,7 @@ pub const JSONParser = struct {
     pub const Error = error{
         UnexpectedEndOfInput,
         SyntaxError,
+        BadToken,
         MissingString,
         MissingKey,
         MissingQuotes,
@@ -349,7 +359,7 @@ pub const JSONParser = struct {
     ) Error!JSONNode {
         if (!self.state.checkLiteral(lit)) {
             @branchHint(.unlikely);
-            return Error.SyntaxError;
+            return Error.BadToken;
         }
         return node;
     }
@@ -626,6 +636,7 @@ pub const JSONParser = struct {
         }
         self.assembly = .empty;
         self.assembly_alloc = alloc;
+        errdefer self.assembly.deinit(alloc);
         _ = try parser(self, src);
         return self.takeAssembly();
     }
@@ -697,8 +708,42 @@ test JSONParser {
     }
 }
 
+fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
+    for (1..times + 1) |i| {
+        const start = std.time.microTimestamp();
+        _ = p.parseMultiToAssembly(src) catch |err| {
+            std.debug.print("{s} at line {d}, column {d} (...{s}...)\n", .{
+                @errorName(err),
+                p.state.line,
+                p.state.col(),
+                p.state.view()[0..30],
+            });
+            return err;
+        };
+        const end = std.time.microTimestamp();
+        const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
+        const rate = @as(f64, @floatFromInt(src.len)) / seconds / 1_000_000;
+        std.debug.print("  {d:>3}: {d:>8.3}s {d:>8.3}MB/s\n", .{ i, seconds, rate });
+    }
+}
+
 pub fn main() !void {
-    std.debug.print("Jelly!\n", .{});
+    var args = std.process.args();
+    _ = args.skip();
+
+    while (args.next()) |arg| {
+        var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer gpa.deinit();
+        const alloc = gpa.allocator();
+        var p = try JSONParser.init(alloc);
+        defer p.deinit();
+        const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
+        defer alloc.free(src);
+        // std.debug.print("{s}\n", .{arg});
+        std.debug.print("{s}: {d} bytes\n", .{ arg, src.len });
+        try p.assembly.ensureTotalCapacity(alloc, src.len);
+        try benchmark(&p, src, 5);
+    }
 }
 
 const std = @import("std");
