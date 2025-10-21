@@ -117,10 +117,10 @@ pub const JSONParser = struct {
 
     fn parseNumber(self: *Self) Error!JSONNode {
         self.state.setMark();
-        const nc = self.state.next();
+        const nc = self.state.peek();
         if (nc == '-') {
-            try self.checkEof();
             _ = self.state.next();
+            try self.checkEof();
         }
         try self.checkDigits();
         if (!self.state.eof() and self.state.peek() == '.') {
@@ -399,6 +399,19 @@ test JSONParser {
         \\[{"id":{"name":"Andy","email":"andy@example.com"}},
         ++
             \\{"id":{"name":"Smoo","email":"smoo@example.com"}}]
+        ,
+        "1",
+        "0",
+        "1.2345",
+        "1e30",
+        "1e+30",
+        "1.3e-30",
+        "-1",
+        "-0",
+        "-1.2345",
+        "-1e30",
+        "-1e+30",
+        "-1.3e-30",
     };
 
     for (cases) |case| {
