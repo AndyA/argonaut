@@ -95,6 +95,7 @@ test unescapeToBuffer {
     for (cases) |case| {
         var buf: [100]u8 = undefined;
         const len = try unescapeToBuffer(case.in, &buf);
+        try std.testing.expectEqual(len, unescapedLength(case.in));
         try std.testing.expectEqualDeep(case.out, buf[0..len]);
     }
 }
