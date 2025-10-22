@@ -206,16 +206,9 @@ pub fn Loader(comptime T: type) type {
                                         const value = try ChildLoaders[i].load(values[idx], alloc);
                                         @field(obj, field.name) = value;
                                     } else if (field.defaultValue()) |def| {
-                                        switch (field.type) {
-                                            .array => {
-                                                @field(obj, field.name) = try alloc.dupe(def);
-                                            },
-                                            else => {
-                                                const dupe = try alloc.create(field.type);
-                                                dupe.* = def.*;
-                                                @field(obj, field.name) = dupe;
-                                            },
-                                        }
+                                        // TODO what happens when we try to destroy
+                                        // a constant?
+                                        @field(obj, field.name) = def;
                                     } else if (@typeInfo(field.type) == .optional) {
                                         @field(obj, field.name) = null;
                                     } else {
@@ -265,15 +258,60 @@ test Loader {
     var p = try JSONParser.init(alloc);
     defer p.deinit();
 
-    const S1 = struct { x: i32, y: i32 };
+    const XY = struct { x: i32, y: i32 };
+    const XYZ1 = struct { x: i32, y: i32, z: i32 = 0 };
+    const XYZ2 = struct { x: i32, y: i32, z: ?i32 };
+    const Info = struct { name: []const u8, tags: ?[]const []const u8 };
 
     const cases = .{
         TestCase(usize, "123", 123),
         TestCase(?usize, "null", null),
-        TestCase([3]i32, "[1, -2, 3]", .{ 1, -2, 3 }),
-        TestCase([]const i32, "[1, -2, 3]", &[_]i32{ 1, -2, 3 }),
         TestCase([]const u8, "\"Hello\"", "Hello"),
-        TestCase(S1, "{\"x\":100, \"y\":200}", .{ .x = 100, .y = 200 }),
+        TestCase(
+            [3]i32,
+            "[1, -2, 3]",
+            .{ 1, -2, 3 },
+        ),
+        TestCase(
+            []const i32,
+            "[1, -2, 3]",
+            &[_]i32{ 1, -2, 3 },
+        ),
+        TestCase(
+            XY,
+            "{\"x\":100, \"y\":200}",
+            .{ .x = 100, .y = 200 },
+        ),
+        TestCase(
+            XYZ1,
+            "{\"x\":100, \"y\":200}",
+            .{ .x = 100, .y = 200, .z = 0 },
+        ),
+        TestCase(
+            XYZ1,
+            "{\"z\": 300, \"x\":100, \"y\":200}",
+            .{ .x = 100, .y = 200, .z = 300 },
+        ),
+        TestCase(
+            XYZ2,
+            "{\"x\":100, \"y\":200}",
+            .{ .x = 100, .y = 200, .z = null },
+        ),
+        TestCase(
+            XYZ2,
+            "{\"z\": 300, \"x\":100, \"y\":200}",
+            .{ .x = 100, .y = 200, .z = 300 },
+        ),
+        TestCase(
+            Info,
+            "{\"name\":\"Andy\"}",
+            .{ .name = "Andy", .tags = null },
+        ),
+        TestCase(
+            Info,
+            "{\"name\":\"Andy\", \"tags\":[\"zig\", \"zag\"]}",
+            .{ .name = "Andy", .tags = &.{ "zig", "zag" } },
+        ),
     };
 
     inline for (cases) |case| {
