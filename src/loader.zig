@@ -84,11 +84,11 @@ pub fn Loader(comptime T: type) type {
                     pub const Type = T;
 
                     pub fn load(node: JSONNode, alloc: Allocator) !T {
-                        return switch (node) {
-                            .array, .multi => |a| blk: {
+                        switch (node) {
+                            .array, .multi => |a| {
                                 var size = a.len;
                                 if (a.len != info.len)
-                                    break :blk LoaderError.ArraySizeMismatch;
+                                    return LoaderError.ArraySizeMismatch;
                                 if (info.sentinel_ptr != null) size += 1;
                                 var arr: T = undefined;
                                 for (a, 0..) |item, i| {
@@ -100,8 +100,10 @@ pub fn Loader(comptime T: type) type {
                                 }
                                 return arr;
                             },
-                            else => LoaderError.TypeMismatch,
-                        };
+                            else => {
+                                return LoaderError.TypeMismatch;
+                            },
+                        }
                     }
 
                     pub fn destroy(value: *T, alloc: Allocator) void {
@@ -213,7 +215,7 @@ pub fn Loader(comptime T: type) type {
                     pub const Type = T;
 
                     pub fn load(node: JSONNode, alloc: Allocator) !T {
-                        return switch (node) {
+                        switch (node) {
                             .object => |o| {
                                 assert(o.len >= 1);
                                 const class = o[0].class;
@@ -237,8 +239,10 @@ pub fn Loader(comptime T: type) type {
 
                                 return obj;
                             },
-                            else => LoaderError.TypeMismatch,
-                        };
+                            else => {
+                                return LoaderError.TypeMismatch;
+                            },
+                        }
                     }
 
                     pub fn destroy(value: *T, alloc: Allocator) void {
