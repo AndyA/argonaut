@@ -239,6 +239,7 @@ pub fn Loader(comptime T: type) type {
 
                                 return obj;
                             },
+                            // TODO .array == tuple
                             else => {
                                 return LoaderError.TypeMismatch;
                             },
