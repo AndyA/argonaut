@@ -282,7 +282,6 @@ test Loader {
     const XYZdefault = struct { x: i32, y: i32, z: i32 = 0 };
     const XYZoptional = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
-    const EscapedKey = struct { @"\n": bool };
 
     const cases = .{
         tc(usize, "123", 123),
@@ -348,7 +347,7 @@ test Loader {
             .{ .name = "Andy", .tags = &.{ "zig", "zag" } },
         ),
         tc(
-            EscapedKey,
+            struct { @"\n": bool },
             \\{"\n": true}
         ,
             .{ .@"\n" = true },
