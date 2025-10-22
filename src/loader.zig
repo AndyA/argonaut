@@ -258,7 +258,7 @@ pub fn Loader(comptime T: type) type {
     }
 }
 
-fn TestCase(
+fn tc(
     comptime Type: type,
     comptime json_v: []const u8,
     comptime want_v: Type,
@@ -284,56 +284,56 @@ test Loader {
     const Unsafe = struct { @"\n": bool };
 
     const cases = .{
-        TestCase(usize, "123", 123),
-        TestCase(?usize, "null", null),
-        TestCase([]const u8, "\"Hello\"", "Hello"),
-        TestCase([]const u8, "\"Hello\\n\"", "Hello\n"),
-        TestCase(
+        tc(usize, "123", 123),
+        tc(?usize, "null", null),
+        tc([]const u8, "\"Hello\"", "Hello"),
+        tc([]const u8, "\"Hello\\n\"", "Hello\n"),
+        tc(
             [3]i32,
             "[1, -2, 3]",
             .{ 1, -2, 3 },
         ),
-        TestCase(
+        tc(
             []const i32,
             "[1, -2, 3]",
             &[_]i32{ 1, -2, 3 },
         ),
-        TestCase(
+        tc(
             XY,
             "{\"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200 },
         ),
-        TestCase(
+        tc(
             XYZ1,
             "{\"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 0 },
         ),
-        TestCase(
+        tc(
             XYZ1,
             "{\"z\": 300, \"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 300 },
         ),
-        TestCase(
+        tc(
             XYZ2,
             "{\"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = null },
         ),
-        TestCase(
+        tc(
             XYZ2,
             "{\"z\": 300, \"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 300 },
         ),
-        TestCase(
+        tc(
             Info,
             "{\"name\":\"Andy\"}",
             .{ .name = "Andy", .tags = null },
         ),
-        TestCase(
+        tc(
             Info,
             "{\"name\":\"Andy\", \"tags\":[\"zig\", \"zag\"]}",
             .{ .name = "Andy", .tags = &.{ "zig", "zag" } },
         ),
-        TestCase(
+        tc(
             Unsafe,
             "{\"\\n\":true}",
             .{ .@"\n" = true },
