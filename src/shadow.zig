@@ -60,6 +60,7 @@ pub const ShadowClass = struct {
         if (self.size() > 0)
             alloc.free(self.name);
         self.next.deinit(alloc);
+        self.* = undefined;
     }
 
     pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
