@@ -71,7 +71,7 @@ pub const ShadowClass = struct {
             slot.value_ptr.* = Self{
                 .parent = self,
                 .name = key_name,
-                .index = self.index +% 1,
+                .index = self.size(),
             };
         }
         return slot.value_ptr;
