@@ -262,6 +262,7 @@ test Loader {
     const XYZ1 = struct { x: i32, y: i32, z: i32 = 0 };
     const XYZ2 = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
+    const Unsafe = struct { @"\n": bool };
 
     const cases = .{
         TestCase(usize, "123", 123),
@@ -311,6 +312,11 @@ test Loader {
             Info,
             "{\"name\":\"Andy\", \"tags\":[\"zig\", \"zag\"]}",
             .{ .name = "Andy", .tags = &.{ "zig", "zag" } },
+        ),
+        TestCase(
+            Unsafe,
+            "{\"\\n\":true}",
+            .{ .@"\n" = true },
         ),
     };
 

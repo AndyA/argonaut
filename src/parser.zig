@@ -16,6 +16,11 @@ pub const JSONParser = struct {
         JunkAfterInput,
         OutOfMemory,
         RestartParser,
+        Overflow,
+        InvalidCharacter,
+        BadUnicodeEscape,
+        CodepointTooLarge,
+        Utf8CannotEncodeSurrogateHalf,
     };
 
     work_alloc: Allocator,

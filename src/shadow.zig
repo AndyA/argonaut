@@ -5,6 +5,53 @@ pub const SafeObjectClass = struct {
 
     index_map: ObjectClass.IndexMap = .empty,
     names: []const []const u8,
+    buffer: []u8,
+
+    pub fn initFromNames(alloc: std.mem.Allocator, unsafe_names: []const []const u8) !Self {
+        var buf_size: usize = 0;
+        for (unsafe_names) |n| {
+            buf_size += n.len;
+        }
+
+        var buffer = try alloc.alloc(u8, buf_size);
+        errdefer alloc.free(buffer);
+
+        var names = try alloc.alloc([]const u8, unsafe_names.len);
+        errdefer alloc.free(names);
+
+        var index_map: ObjectClass.IndexMap = .empty;
+
+        if (unsafe_names.len > 0)
+            try index_map.ensureTotalCapacity(alloc, @intCast(unsafe_names.len));
+
+        var buf_pos: usize = 0;
+        for (unsafe_names, 0..) |n, i| {
+            assert(buf_pos + n.len <= buf_size);
+            const enc_len = try string.unEscapeToBuffer(n, buffer[buf_pos..]);
+            const next_pos = buf_pos + enc_len;
+            const name = buffer[buf_pos..next_pos];
+            buf_pos = next_pos;
+            names[i] = name;
+            index_map.putAssumeCapacity(name, @intCast(i));
+        }
+
+        return Self{
+            .index_map = index_map,
+            .names = names,
+            .buffer = buffer,
+        };
+    }
+
+    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+        self.index_map.deinit(alloc);
+        alloc.free(self.names);
+        alloc.free(self.buffer);
+        self.* = undefined;
+    }
+
+    pub fn get(self: Self, key: []const u8) ?u32 {
+        return self.index_map.get(key);
+    }
 };
 
 pub const ObjectClass = struct {
@@ -13,8 +60,9 @@ pub const ObjectClass = struct {
 
     index_map: IndexMap = .empty,
     names: []const []const u8,
+    safe: ?SafeObjectClass = null,
 
-    pub fn initFromShadow(alloc: std.mem.Allocator, shadow: *const ShadowClass) OOM!Self {
+    pub fn initFromShadow(alloc: std.mem.Allocator, shadow: *const ShadowClass) !Self {
         const size = shadow.size();
 
         var names = try alloc.alloc([]const u8, size);
@@ -24,25 +72,37 @@ pub const ObjectClass = struct {
             try index_map.ensureTotalCapacity(alloc, size);
 
         var class = shadow;
+        var is_safe = true;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;
             index_map.putAssumeCapacity(class.name, class.index);
+            if (!string.isSafe(class.name)) is_safe = false;
         }
+
+        var safe: ?SafeObjectClass = null;
+        if (!is_safe) safe = try SafeObjectClass.initFromNames(alloc, names);
 
         return Self{
             .index_map = index_map,
             .names = names,
+            .safe = safe,
         };
     }
 
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+        if (self.safe) |*s| {
+            s.deinit(alloc);
+        }
         self.index_map.deinit(alloc);
         alloc.free(self.names);
         self.* = undefined;
     }
 
     pub fn get(self: Self, key: []const u8) ?u32 {
+        if (self.safe) |s| {
+            return s.get(key);
+        }
         return self.index_map.get(key);
     }
 };
@@ -91,7 +151,7 @@ pub const ShadowClass = struct {
         return slot.value_ptr;
     }
 
-    pub fn getClass(self: *Self, alloc: std.mem.Allocator) OOM!*const ObjectClass {
+    pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {
         if (self.object_class == null)
             self.object_class = try ObjectClass.initFromShadow(alloc, self);
 
