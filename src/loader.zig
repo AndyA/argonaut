@@ -134,25 +134,25 @@ pub fn Loader(comptime T: type) type {
                                         }
                                         return arr;
                                     },
-                                    .string, .safe_string => |a| {
+                                    .string, .safe_string => |str| {
                                         if (info.child != u8)
                                             return LoaderError.TypeMismatch;
 
-                                        const size = a.len;
+                                        const size = str.len;
                                         const adj = if (info.sentinel_ptr == null) 0 else 1;
 
                                         var arr: []u8 = undefined;
 
                                         switch (node) {
                                             .string => {
-                                                const enc_len = try string.unescapedLength(a);
+                                                const enc_len = try string.unescapedLength(str);
                                                 arr = try alloc.alloc(u8, enc_len + adj);
                                                 errdefer alloc.free(arr);
-                                                _ = try string.unescapeToBuffer(a, arr);
+                                                _ = try string.unescapeToBuffer(str, arr);
                                             },
                                             .safe_string => {
                                                 arr = try alloc.alloc(u8, size + adj);
-                                                @memcpy(arr[0..a.len], a);
+                                                @memcpy(arr[0..str.len], str);
                                             },
                                             else => unreachable,
                                         }
