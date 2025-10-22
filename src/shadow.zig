@@ -1,3 +1,5 @@
+const OOM = error{OutOfMemory};
+
 pub const ObjectClass = struct {
     const Self = @This();
     pub const IndexMap = std.StringHashMapUnmanaged(u32);
@@ -5,7 +7,7 @@ pub const ObjectClass = struct {
     index_map: IndexMap = .empty,
     names: []const []const u8,
 
-    pub fn init(alloc: std.mem.Allocator, shadow: *const ShadowClass) !Self {
+    pub fn init(alloc: std.mem.Allocator, shadow: *const ShadowClass) OOM!Self {
         const size = shadow.size();
 
         var names = try alloc.alloc([]const u8, size);
@@ -30,6 +32,7 @@ pub const ObjectClass = struct {
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         self.index_map.deinit(alloc);
         alloc.free(self.names);
+        self.* = undefined;
     }
 };
 
@@ -63,7 +66,7 @@ pub const ShadowClass = struct {
         self.* = undefined;
     }
 
-    pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) !*Self {
+    pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) OOM!*Self {
         const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
             const key_name = try alloc.dupe(u8, name);
@@ -77,7 +80,7 @@ pub const ShadowClass = struct {
         return slot.value_ptr;
     }
 
-    pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {
+    pub fn getClass(self: *Self, alloc: std.mem.Allocator) OOM!*const ObjectClass {
         if (self.object_class == null)
             self.object_class = try ObjectClass.init(alloc, self);
 

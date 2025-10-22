@@ -44,6 +44,7 @@ pub const JSONParser = struct {
         self.scratch.deinit(self.work_alloc);
         self.shadow_root.deinit(self.work_alloc);
         self.assembly.deinit(self.assembly_alloc);
+        self.* = undefined;
     }
 
     pub fn setAssemblyAllocator(self: *Self, alloc: Allocator) void {
