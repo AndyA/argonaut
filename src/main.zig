@@ -5,6 +5,7 @@ const ShadowClass = @import("./shadow.zig").ShadowClass;
 test {
     _ = @import("./parser.zig");
     _ = @import("./loader.zig");
+    _ = @import("./string.zig");
 }
 
 fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {

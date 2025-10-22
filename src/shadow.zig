@@ -1,13 +1,21 @@
 const OOM = error{OutOfMemory};
 
+const IndexMap = std.StringHashMapUnmanaged(u32);
+
+pub const SafeObjectClass = struct {
+    const Self = @This();
+
+    index_map: IndexMap = .empty,
+    names: []const []const u8,
+};
+
 pub const ObjectClass = struct {
     const Self = @This();
-    pub const IndexMap = std.StringHashMapUnmanaged(u32);
 
     index_map: IndexMap = .empty,
     names: []const []const u8,
 
-    pub fn init(alloc: std.mem.Allocator, shadow: *const ShadowClass) OOM!Self {
+    pub fn initFromShadow(alloc: std.mem.Allocator, shadow: *const ShadowClass) OOM!Self {
         const size = shadow.size();
 
         var names = try alloc.alloc([]const u8, size);
@@ -86,7 +94,7 @@ pub const ShadowClass = struct {
 
     pub fn getClass(self: *Self, alloc: std.mem.Allocator) OOM!*const ObjectClass {
         if (self.object_class == null)
-            self.object_class = try ObjectClass.init(alloc, self);
+            self.object_class = try ObjectClass.initFromShadow(alloc, self);
 
         return &self.object_class.?;
     }
@@ -123,3 +131,4 @@ test ShadowClass {
 
 const std = @import("std");
 const assert = std.debug.assert;
+const string = @import("string.zig");
