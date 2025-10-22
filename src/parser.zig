@@ -12,6 +12,7 @@ pub const JSONParser = struct {
         MissingQuotes,
         MissingComma,
         MissingColon,
+        MissingDigits,
         JunkAfterInput,
         OutOfMemory,
         RestartParser,
@@ -112,8 +113,9 @@ pub const JSONParser = struct {
     }
 
     fn checkDigits(self: *Self) Error!void {
-        try self.checkEof();
+        const start = self.state.pos;
         self.state.skipDigits();
+        if (self.state.pos == start) return Error.MissingDigits;
     }
 
     fn parseNumber(self: *Self) Error!JSONNode {

@@ -16,7 +16,7 @@ pub const ObjectClass = struct {
         if (size > 0)
             try index_map.ensureTotalCapacity(alloc, size);
 
-        var class: *const ShadowClass = shadow;
+        var class = shadow;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;

@@ -1,8 +1,10 @@
 const std = @import("std");
 const JSONParser = @import("./parser.zig").JSONParser;
+const ShadowClass = @import("./shadow.zig").ShadowClass;
 
 test {
     _ = @import("./parser.zig");
+    _ = @import("./loader.zig");
 }
 
 fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
@@ -24,6 +26,22 @@ fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
     }
 }
 
+fn walkShadow(shadow: *const ShadowClass, depth: u32) void {
+    for (0..depth) |_| {
+        std.debug.print("  ", .{});
+    }
+    if (shadow.object_class) |_| {
+        std.debug.print("* ", .{});
+    } else {
+        std.debug.print("- ", .{});
+    }
+    std.debug.print("{s}\n", .{shadow.name});
+    var iter = shadow.next.valueIterator();
+    while (iter.next()) |next| {
+        walkShadow(next, depth + 1);
+    }
+}
+
 pub fn main() !void {
     var args = std.process.args();
     _ = args.skip();
@@ -40,5 +58,6 @@ pub fn main() !void {
         std.debug.print("{s}: {d} bytes\n", .{ arg, src.len });
         // try p.assembly.ensureTotalCapacity(alloc, src.len);
         try benchmark(&p, src, 5);
+        walkShadow(&p.shadow_root, 0);
     }
 }
