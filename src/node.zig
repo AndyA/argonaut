@@ -5,6 +5,7 @@ pub const JSONNode = union(enum) {
     boolean: bool,
     number: []const u8,
     string: []const u8,
+    safe_string: []const u8, // needs no unescaping
     multi: []const Self,
     array: []const Self,
     object: []const Self,
@@ -18,7 +19,7 @@ pub const JSONNode = union(enum) {
             .null => try w.print("null", .{}),
             .boolean => |b| try w.print("{any}", .{b}),
             .number => |n| try w.print("{s}", .{n}),
-            .string => |s| try w.print("\"{s}\"", .{s}),
+            .string, .safe_string => |s| try w.print("\"{s}\"", .{s}),
             .multi => |m| {
                 for (m) |item| {
                     try item.format(w);
@@ -63,7 +64,7 @@ test JSONNode {
 
     const arr_body = [_]JSONNode{
         .{ .string = "zig" },
-        .{ .string = "json" },
+        .{ .safe_string = "json" },
         .{ .string = "parser" },
     };
 

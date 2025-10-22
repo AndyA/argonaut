@@ -78,7 +78,9 @@ pub const JSONParser = struct {
         return node;
     }
 
-    fn parseStringBody(self: *Self) Error![]const u8 {
+    fn parseString(self: *Self) Error!JSONNode {
+        var safe = true;
+        _ = self.state.next();
         self.state.setMark();
         while (true) {
             if (self.state.eof()) {
@@ -94,22 +96,23 @@ pub const JSONParser = struct {
                 @branchHint(.unlikely);
                 try self.checkEof();
                 _ = self.state.next();
+                safe = false;
             }
         }
         const marked = self.state.takeMarked();
-        return marked[0 .. marked.len - 1];
+        const body = marked[0 .. marked.len - 1];
+
+        return if (safe) .{ .safe_string = body } else .{ .string = body };
     }
 
     fn parseKey(self: *Self) Error![]const u8 {
-        if (self.state.next() != '"')
+        if (self.state.peek() != '"')
             return Error.MissingKey;
-        return self.parseStringBody();
-    }
-
-    fn parseString(self: *Self) Error!JSONNode {
-        _ = self.state.next();
-        const marked = try self.parseStringBody();
-        return .{ .string = marked };
+        const node = try self.parseString();
+        return switch (node) {
+            .safe_string, .string => |s| s,
+            else => unreachable,
+        };
     }
 
     fn checkDigits(self: *Self) Error!void {

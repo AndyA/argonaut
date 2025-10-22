@@ -135,7 +135,7 @@ pub fn Loader(comptime T: type) type {
                                         }
                                         return arr;
                                     },
-                                    .string => |a| {
+                                    .safe_string, .string => |a| {
                                         if (info.child != u8)
                                             return LoaderError.TypeMismatch;
                                         var size = a.len;
