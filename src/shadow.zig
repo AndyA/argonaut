@@ -27,7 +27,7 @@ pub const SafeObjectClass = struct {
         var buf_pos: usize = 0;
         for (unsafe_names, 0..) |n, i| {
             assert(buf_pos + n.len <= buf_size);
-            const enc_len = try string.unEscapeToBuffer(n, buffer[buf_pos..]);
+            const enc_len = try string.unescapeToBuffer(n, buffer[buf_pos..]);
             const next_pos = buf_pos + enc_len;
             const name = buffer[buf_pos..next_pos];
             buf_pos = next_pos;

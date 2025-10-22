@@ -120,7 +120,7 @@ pub fn Loader(comptime T: type) type {
                             pub const Type = T;
 
                             pub fn load(node: JSONNode, alloc: Allocator) !T {
-                                return switch (node) {
+                                switch (node) {
                                     .array => |a| {
                                         var size = a.len;
                                         if (info.sentinel_ptr != null) size += 1;
@@ -135,22 +135,41 @@ pub fn Loader(comptime T: type) type {
                                         }
                                         return arr;
                                     },
-                                    .safe_string, .string => |a| {
+                                    .string, .safe_string => |a| {
                                         if (info.child != u8)
                                             return LoaderError.TypeMismatch;
-                                        var size = a.len;
-                                        if (info.sentinel_ptr != null) size += 1;
-                                        var arr = try alloc.alloc(info.child, size);
-                                        errdefer alloc.free(arr);
-                                        @memcpy(arr[0..a.len], a);
+
+                                        const size = a.len;
+                                        const adj = if (info.sentinel_ptr == null) 0 else 1;
+
+                                        var arr: []u8 = undefined;
+
+                                        switch (node) {
+                                            .string => {
+                                                const enc_len = try string.unescapedLength(a);
+                                                arr = try alloc.alloc(u8, enc_len + adj);
+                                                errdefer alloc.free(arr);
+                                                _ = try string.unescapeToBuffer(a, arr);
+                                                arr.len = enc_len + adj;
+                                            },
+                                            .safe_string => {
+                                                arr = try alloc.alloc(u8, size + adj);
+                                                @memcpy(arr[0..a.len], a);
+                                            },
+                                            else => unreachable,
+                                        }
+
                                         if (info.sentinel()) |s| {
                                             arr.len -= 1;
                                             arr[arr.len] = s;
                                         }
+
                                         return arr;
                                     },
-                                    else => LoaderError.TypeMismatch,
-                                };
+                                    else => {
+                                        return LoaderError.TypeMismatch;
+                                    },
+                                }
                             }
 
                             pub fn destroy(value: *T, alloc: Allocator) void {
@@ -268,6 +287,7 @@ test Loader {
         TestCase(usize, "123", 123),
         TestCase(?usize, "null", null),
         TestCase([]const u8, "\"Hello\"", "Hello"),
+        TestCase([]const u8, "\"Hello\\n\"", "Hello\n"),
         TestCase(
             [3]i32,
             "[1, -2, 3]",
@@ -340,3 +360,4 @@ const assert = std.debug.assert;
 const JSONNode = @import("./node.zig").JSONNode;
 const JSONParser = @import("./parser.zig").JSONParser;
 const Allocator = std.mem.Allocator;
+const string = @import("./string.zig");
