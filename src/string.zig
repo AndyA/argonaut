@@ -50,10 +50,7 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
                     return Error.BadUnicodeEscape;
                 const cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
                 i_pos += 4;
-                const utf8_len = try std.unicode.utf8CodepointSequenceLength(cp);
-                assert(o_pos + utf8_len <= buf.len);
-                _ = try std.unicode.utf8Encode(cp, buf[o_pos..]);
-                o_pos += utf8_len;
+                o_pos += try std.unicode.utf8Encode(cp, buf[o_pos..]);
             } else {
                 const rc = switch (ec) {
                     '\"', '\\', '/' => |c| c,
