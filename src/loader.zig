@@ -149,7 +149,6 @@ pub fn Loader(comptime T: type) type {
                                                 arr = try alloc.alloc(u8, enc_len + adj);
                                                 errdefer alloc.free(arr);
                                                 _ = try string.unescapeToBuffer(a, arr);
-                                                arr.len = enc_len + adj;
                                             },
                                             .safe_string => {
                                                 arr = try alloc.alloc(u8, size + adj);
