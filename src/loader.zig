@@ -27,8 +27,7 @@ pub fn Loader(comptime T: type) type {
                     }
                 };
             },
-            .bool => |info| {
-                _ = info;
+            .bool => {
                 return struct {
                     pub const Type = T;
 
@@ -44,8 +43,7 @@ pub fn Loader(comptime T: type) type {
                     }
                 };
             },
-            .int => |info| {
-                _ = info;
+            .int => {
                 return struct {
                     pub const Type = T;
 
@@ -61,8 +59,7 @@ pub fn Loader(comptime T: type) type {
                     }
                 };
             },
-            .float => |info| {
-                _ = info;
+            .float => {
                 return struct {
                     pub const Type = T;
 
