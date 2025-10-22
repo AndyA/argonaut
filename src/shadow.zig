@@ -34,6 +34,10 @@ pub const ObjectClass = struct {
         alloc.free(self.names);
         self.* = undefined;
     }
+
+    pub fn get(self: Self, key: []const u8) ?u32 {
+        return self.index_map.get(key);
+    }
 };
 
 pub const ShadowClass = struct {
