@@ -85,7 +85,7 @@ pub fn Loader(comptime T: type) type {
 
                     pub fn load(node: JSONNode, alloc: Allocator) !T {
                         return switch (node) {
-                            .array => |a| blk: {
+                            .array, .multi => |a| blk: {
                                 var size = a.len;
                                 if (a.len != info.len)
                                     break :blk LoaderError.ArraySizeMismatch;
@@ -121,7 +121,7 @@ pub fn Loader(comptime T: type) type {
 
                             pub fn load(node: JSONNode, alloc: Allocator) !T {
                                 switch (node) {
-                                    .array => |a| {
+                                    .array, .multi => |a| {
                                         var size = a.len;
                                         if (info.sentinel_ptr != null) size += 1;
                                         var arr = try alloc.alloc(info.child, size);
