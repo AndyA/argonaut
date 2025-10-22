@@ -1,16 +1,15 @@
 const OOM = error{OutOfMemory};
 
-const IndexMap = std.StringHashMapUnmanaged(u32);
-
 pub const SafeObjectClass = struct {
     const Self = @This();
 
-    index_map: IndexMap = .empty,
+    index_map: ObjectClass.IndexMap = .empty,
     names: []const []const u8,
 };
 
 pub const ObjectClass = struct {
     const Self = @This();
+    pub const IndexMap = std.StringHashMapUnmanaged(u32);
 
     index_map: IndexMap = .empty,
     names: []const []const u8,
