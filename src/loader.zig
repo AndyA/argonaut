@@ -279,8 +279,8 @@ test Loader {
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };
-    const XYZ1 = struct { x: i32, y: i32, z: i32 = 0 };
-    const XYZ2 = struct { x: i32, y: i32, z: ?i32 };
+    const XYZdefault = struct { x: i32, y: i32, z: i32 = 0 };
+    const XYZoptional = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
     const EscapedKey = struct { @"\n": bool };
 
@@ -305,22 +305,22 @@ test Loader {
             .{ .x = 100, .y = 200 },
         ),
         tc(
-            XYZ1,
+            XYZdefault,
             "{\"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 0 },
         ),
         tc(
-            XYZ1,
+            XYZdefault,
             "{\"z\": 300, \"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 300 },
         ),
         tc(
-            XYZ2,
+            XYZoptional,
             "{\"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = null },
         ),
         tc(
-            XYZ2,
+            XYZoptional,
             "{\"z\": 300, \"x\":100, \"y\":200}",
             .{ .x = 100, .y = 200, .z = 300 },
         ),
