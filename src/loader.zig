@@ -184,6 +184,7 @@ pub fn Loader(comptime T: type) type {
                         switch (node) {
                             .object => |o| {
                                 assert(o.len >= 1);
+                                assert(o[0] == .class);
                                 const class = o[0].class;
                                 assert(o.len == class.names.len + 1);
                                 const values = o[1..];
