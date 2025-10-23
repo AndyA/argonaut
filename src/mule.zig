@@ -106,7 +106,7 @@ pub fn main() !void {
     const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
     defer alloc.free(src);
 
-    const node = try p.parseMultiToAssembly(src);
+    const node = try p.parseMulti(src);
 
     const start = std.time.microTimestamp();
     const changes = try Loader([]const Change).load(node, alloc);

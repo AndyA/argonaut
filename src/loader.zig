@@ -212,13 +212,11 @@ pub fn Loader(comptime T: type) type {
                                     if (i < a.len) {
                                         const value = try ChildLoaders[i].load(a[i], alloc);
                                         @field(obj, field.name) = value;
-                                    } else {
-                                        if (field.defaultValue()) |def| {
-                                            @field(obj, field.name) = def;
-                                        } else if (@typeInfo(field.type) == .optional) {
-                                            @field(obj, field.name) = null;
-                                        } else unreachable;
-                                    }
+                                    } else if (field.defaultValue()) |def| {
+                                        @field(obj, field.name) = def;
+                                    } else if (@typeInfo(field.type) == .optional) {
+                                        @field(obj, field.name) = null;
+                                    } else unreachable;
                                 }
                                 return obj;
                             },
