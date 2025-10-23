@@ -13,29 +13,64 @@ const EditRate = struct {
     numerator: u32,
 };
 
+const BBCAspectRatio = enum {
+    @"16F16A",
+    @"12F12C",
+    @"16F16C",
+    @"14P16B",
+    @"12P16C",
+    @"16P12",
+    @"16F16B",
+};
+
+const ContainerFormat = enum {
+    @"mpeg/ps",
+    @"riff/wave",
+    @"qt/cont",
+    @"mxf/opatom",
+    @"mxf/op1a",
+    @"riff/avi",
+};
+
+const EbuAudioLayout = enum {
+    EBU_R123_16c,
+    EBU_R123_4b,
+    EBU_R48_2a,
+};
+
 const TechnicalMetadata = struct {
     audioChannelCount: ?u32,
-    bbcAspectRatio: ?[]const u8,
-    containerFormat: ?[]const u8,
+    bbcAspectRatio: ?BBCAspectRatio,
+    containerFormat: ?ContainerFormat,
     duration: ?u32,
-    ebuAudioLayout: ?[]const u8,
+    ebuAudioLayout: ?EbuAudioLayout,
     editRate: ?EditRate,
     formatDescription: ?[]const u8,
     md5Hash: ?[]const u8,
     startTimecodeEditUnits: ?u32,
 };
 
+const ObjectType = enum {
+    browse_audio,
+    browse_video,
+    primary_audio,
+    primary_subtitles,
+    primary_video,
+};
+
 const BytesObject = struct {
     locator: ?Locator,
     size: ?u64,
     technicalMetadata: ?TechnicalMetadata,
-    type: []const u8,
+    type: ObjectType,
 };
+
+const SourceType = enum { item, package };
 
 const Source = struct {
     authority: []const u8,
     id: []const u8,
-    type: []const u8,
+    type: SourceType,
 };
 
 const Document = struct {
@@ -45,9 +80,11 @@ const Document = struct {
     timestamp: []const u8,
 };
 
+const ChangeType = enum { insert, update, delete };
+
 const Change = struct {
     id: []const u8,
-    operation: []const u8,
+    operation: ChangeType,
     sequencer: u64,
     document: Document,
 };

@@ -2,6 +2,7 @@ pub const LoaderError = error{
     TypeMismatch,
     ArraySizeMismatch,
     MissingField,
+    BadEnum,
 };
 
 pub fn Loader(comptime T: type) type {
@@ -202,6 +203,40 @@ pub fn Loader(comptime T: type) type {
                     }
                 };
             },
+            .@"enum" => |info| {
+                var kv: [info.fields.len]struct { []const u8, info.tag_type } = undefined;
+                for (info.fields, 0..) |field, i| {
+                    kv[i] = .{ field.name, @as(info.tag_type, @intCast(field.value)) };
+                }
+                const map = StaticStringMap(info.tag_type).initComptime(kv);
+                return struct {
+                    pub const Type = T;
+
+                    pub fn load(node: JSONNode, alloc: Allocator) !T {
+                        switch (node) {
+                            .string => |str| {
+                                const enc_len = try string.unescapedLength(str);
+                                const arr = try alloc.alloc(u8, enc_len);
+                                defer alloc.free(arr);
+                                _ = try string.unescapeToBuffer(str, arr);
+                                if (map.get(arr)) |val| {
+                                    return @enumFromInt(val);
+                                }
+                                return LoaderError.BadEnum;
+                            },
+                            .safe_string => |str| {
+                                if (map.get(str)) |val| {
+                                    return @enumFromInt(val);
+                                }
+                                return LoaderError.BadEnum;
+                            },
+                            else => {
+                                return LoaderError.TypeMismatch;
+                            },
+                        }
+                    }
+                };
+            },
             else => @compileError("Unhandled type " ++ @typeName(T)),
         }
     }
@@ -235,6 +270,9 @@ test Loader {
         pt: XYZoptional,
         name: DefStr,
     };
+
+    const SizeEnum = enum { S, M, L, XL, XXL };
+    const EscapeEnum = enum { @"\n", @"\t", @"\r" };
 
     const cases = .{
         tc(usize, "123", 123),
@@ -327,6 +365,18 @@ test Loader {
                 .name = .{ .name = "Me!" },
             },
         ),
+        tc(SizeEnum,
+            \\"S"
+        , .S),
+        tc([]const SizeEnum,
+            \\["S", "M", "XXL"]
+        , &[_]SizeEnum{ .S, .M, .XXL }),
+        tc(EscapeEnum,
+            \\"\n"
+        , .@"\n"),
+        tc([]const EscapeEnum,
+            \\["\n", "\t", "\r"]
+        , &[_]EscapeEnum{ .@"\n", .@"\t", .@"\r" }),
     };
 
     inline for (cases) |case| {
@@ -353,3 +403,4 @@ const JSONNode = @import("./node.zig").JSONNode;
 const JSONParser = @import("./parser.zig").JSONParser;
 const Allocator = std.mem.Allocator;
 const string = @import("./string.zig");
+const StaticStringMap = std.static_string_map.StaticStringMap;
