@@ -2,7 +2,7 @@ pub const LoaderError = error{
     TypeMismatch,
     ArraySizeMismatch,
     MissingField,
-    BadEnum,
+    UnknownEnum,
     TupleSizeMismatch,
 };
 
@@ -252,7 +252,7 @@ pub fn Loader(comptime T: type) type {
                             },
                         };
                         if (tag) |t| return @enumFromInt(t);
-                        return LoaderError.BadEnum;
+                        return LoaderError.UnknownEnum;
                     }
                 };
             },
