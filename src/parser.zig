@@ -237,7 +237,6 @@ pub const JSONParser = struct {
                 if (self.state.next() != ':')
                     return Error.MissingColon;
 
-                try self.checkMore();
                 const node = try self.parseValue(depth + 1);
                 try scratch.append(self.work_alloc, node);
                 try self.checkMore();
@@ -262,8 +261,7 @@ pub const JSONParser = struct {
     }
 
     fn parseValue(self: *Self, depth: u32) Error!JSONNode {
-        self.state.skipSpace();
-        try self.checkEof();
+        try self.checkMore();
         const nc = self.state.peek();
         const node: JSONNode = switch (nc) {
             'n' => try self.parseLiteral("null", .{ .null = {} }),

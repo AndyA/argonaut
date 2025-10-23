@@ -267,13 +267,11 @@ fn tc(
     comptime json_v: []const u8,
     comptime want_v: Type,
 ) type {
-    comptime {
-        return struct {
-            pub const T = Type;
-            pub const json = json_v;
-            pub const want = want_v;
-        };
-    }
+    return struct {
+        pub const T = Type;
+        pub const json = json_v;
+        pub const want = want_v;
+    };
 }
 
 test Loader {
