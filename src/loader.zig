@@ -1,9 +1,9 @@
 pub const LoaderError = error{
     TypeMismatch,
     ArraySizeMismatch,
-    MissingField,
-    UnknownEnum,
     TupleSizeMismatch,
+    MissingField,
+    UnknownEnumValue,
 };
 
 fn isOptional(field: std.builtin.Type.StructField) bool {
@@ -252,7 +252,7 @@ pub fn Loader(comptime T: type) type {
                             },
                         };
                         if (tag) |t| return @enumFromInt(t);
-                        return LoaderError.UnknownEnum;
+                        return LoaderError.UnknownEnumValue;
                     }
                 };
             },
