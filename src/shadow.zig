@@ -1,9 +1,22 @@
 const OOM = error{OutOfMemory};
 
+const IndexMap = std.StringHashMapUnmanaged(u32);
+
+fn indexMapForNames(names: []const []const u8, alloc: std.mem.Allocator) OOM!IndexMap {
+    var index: IndexMap = .empty;
+    if (names.len > 0) {
+        try index.ensureTotalCapacity(alloc, @intCast(names.len));
+        for (names, 0..) |n, i| {
+            index.putAssumeCapacity(n, @intCast(i));
+        }
+    }
+    return index;
+}
+
 pub const SafeObjectClass = struct {
     const Self = @This();
 
-    index_map: ObjectClass.IndexMap = .empty,
+    index_map: IndexMap = .empty,
     names: []const []const u8,
     buffer: []u8,
 
@@ -19,11 +32,6 @@ pub const SafeObjectClass = struct {
         var names = try alloc.alloc([]const u8, unsafe_names.len);
         errdefer alloc.free(names);
 
-        var index_map: ObjectClass.IndexMap = .empty;
-
-        if (unsafe_names.len > 0)
-            try index_map.ensureTotalCapacity(alloc, @intCast(unsafe_names.len));
-
         var buf_pos: usize = 0;
         for (unsafe_names, 0..) |n, i| {
             const enc_len = try string.unescapeToBuffer(n, buffer[buf_pos..]);
@@ -31,11 +39,10 @@ pub const SafeObjectClass = struct {
             const name = buffer[buf_pos..next_pos];
             buf_pos = next_pos;
             names[i] = name;
-            index_map.putAssumeCapacity(name, @intCast(i));
         }
 
         return Self{
-            .index_map = index_map,
+            .index_map = try indexMapForNames(names, alloc),
             .names = names,
             .buffer = buffer,
         };
@@ -55,7 +62,6 @@ pub const SafeObjectClass = struct {
 
 pub const ObjectClass = struct {
     const Self = @This();
-    pub const IndexMap = std.StringHashMapUnmanaged(u32);
 
     index_map: IndexMap = .empty,
     names: []const []const u8,
@@ -66,16 +72,12 @@ pub const ObjectClass = struct {
 
         var names = try alloc.alloc([]const u8, size);
         errdefer alloc.free(names);
-        var index_map: ObjectClass.IndexMap = .empty;
-        if (size > 0)
-            try index_map.ensureTotalCapacity(alloc, size);
 
         var class = shadow;
         var is_safe = true;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;
-            index_map.putAssumeCapacity(class.name, class.index);
             if (!string.isSafe(class.name)) is_safe = false;
         }
 
@@ -83,7 +85,7 @@ pub const ObjectClass = struct {
         if (!is_safe) safe = try SafeObjectClass.initFromNames(alloc, names);
 
         return Self{
-            .index_map = index_map,
+            .index_map = try indexMapForNames(names, alloc),
             .names = names,
             .safe = safe,
         };

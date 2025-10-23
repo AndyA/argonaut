@@ -18,13 +18,6 @@ pub fn Loader(comptime T: type) type {
                             else => try ChildLoader.load(node, alloc),
                         };
                     }
-
-                    pub fn destroy(value: *T, alloc: Allocator) void {
-                        if (value.*) |*v| {
-                            ChildLoader.destroy(v, alloc);
-                        }
-                        value.* = undefined;
-                    }
                 };
             },
             .bool => {
@@ -36,10 +29,6 @@ pub fn Loader(comptime T: type) type {
                             .boolean => |b| b,
                             else => LoaderError.TypeMismatch,
                         };
-                    }
-
-                    pub fn destroy(value: *T, _: Allocator) void {
-                        value.* = undefined;
                     }
                 };
             },
@@ -53,10 +42,6 @@ pub fn Loader(comptime T: type) type {
                             else => LoaderError.TypeMismatch,
                         };
                     }
-
-                    pub fn destroy(value: *T, _: Allocator) void {
-                        value.* = undefined;
-                    }
                 };
             },
             .float => {
@@ -68,10 +53,6 @@ pub fn Loader(comptime T: type) type {
                             .number => |n| std.fmt.parseFloat(T, n),
                             else => LoaderError.TypeMismatch,
                         };
-                    }
-
-                    pub fn destroy(value: *T, _: Allocator) void {
-                        value.* = undefined;
                     }
                 };
             },
@@ -101,13 +82,6 @@ pub fn Loader(comptime T: type) type {
                                 return LoaderError.TypeMismatch;
                             },
                         }
-                    }
-
-                    pub fn destroy(value: *T, alloc: Allocator) void {
-                        for (value) |*item| {
-                            ChildLoader.destroy(@constCast(item), alloc);
-                        }
-                        value.* = undefined;
                     }
                 };
             },
@@ -169,14 +143,6 @@ pub fn Loader(comptime T: type) type {
                                     },
                                 }
                             }
-
-                            pub fn destroy(value: *T, alloc: Allocator) void {
-                                for (value.*) |*item| {
-                                    ChildLoader.destroy(@constCast(item), alloc);
-                                }
-                                alloc.free(value.*);
-                                value.* = undefined;
-                            }
                         };
                     },
                     .one => {
@@ -188,12 +154,6 @@ pub fn Loader(comptime T: type) type {
                                 errdefer alloc.destroy(obj);
                                 obj.* = try ChildLoader.load(node, alloc);
                                 return obj;
-                            }
-
-                            pub fn destroy(value: *T, alloc: Allocator) void {
-                                ChildLoader.destroy(value.*, alloc);
-                                alloc.free(value.*);
-                                value.* = undefined;
                             }
                         };
                     },
@@ -223,8 +183,6 @@ pub fn Loader(comptime T: type) type {
                                         const value = try ChildLoaders[i].load(values[idx], alloc);
                                         @field(obj, field.name) = value;
                                     } else if (field.defaultValue()) |def| {
-                                        // TODO what happens when we try to destroy
-                                        // a constant?
                                         @field(obj, field.name) = def;
                                     } else if (@typeInfo(field.type) == .optional) {
                                         @field(obj, field.name) = null;
@@ -240,17 +198,6 @@ pub fn Loader(comptime T: type) type {
                                 return LoaderError.TypeMismatch;
                             },
                         }
-                    }
-
-                    pub fn destroy(value: *T, alloc: Allocator) void {
-                        inline for (info.fields, 0..) |field, i| {
-                            const item = @field(value.*, field.name);
-                            const optional = @typeInfo(field.type) == .optional;
-                            if (!optional or item != null) {
-                                ChildLoaders[i].destroy(@constCast(&item), alloc);
-                            }
-                        }
-                        value.* = undefined;
                     }
                 };
             },
@@ -274,21 +221,23 @@ fn tc(
 }
 
 test Loader {
-    const alloc = std.testing.allocator;
-    var p = try JSONParser.init(alloc);
+    var p = try JSONParser.init(std.testing.allocator);
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };
     const XYZdefault = struct { x: i32, y: i32, z: i32 = 0 };
     const XYZoptional = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
+    const DefStr = struct { name: []const u8 = "Me!" };
 
     const cases = .{
         tc(usize, "123", 123),
         tc(?usize, "null", null),
+
         tc([]const u8,
             \\"Hello"
         , "Hello"),
+
         tc([]const u8,
             \\"Hello\n"
         , "Hello\n"),
@@ -352,13 +301,23 @@ test Loader {
         ,
             .{ .@"\n" = true },
         ),
+        tc(DefStr,
+            \\{}
+        , .{ .name = "Me!" }),
+        tc(DefStr,
+            \\{ "ignored": true }
+        , .{ .name = "Me!" }),
     };
 
     inline for (cases) |case| {
+        var gpa = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer gpa.deinit();
+        const alloc = gpa.allocator();
+
         const L = Loader(case.T);
         const node = try p.parseToAssembly(case.json);
-        var got = try L.load(node, alloc);
-        defer L.destroy(&got, alloc);
+        const got = try L.load(node, alloc);
+
         try std.testing.expectEqualDeep(case.want, got);
     }
 }
