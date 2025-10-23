@@ -65,7 +65,10 @@ const BytesObject = struct {
     type: ObjectType,
 };
 
-const SourceType = enum { item, package };
+const SourceType = enum {
+    item,
+    package,
+};
 
 const Source = struct {
     authority: []const u8,
@@ -80,7 +83,11 @@ const Document = struct {
     timestamp: []const u8,
 };
 
-const ChangeType = enum { insert, update, delete };
+const ChangeType = enum {
+    insert,
+    update,
+    delete,
+};
 
 const Change = struct {
     id: []const u8,
@@ -110,6 +117,6 @@ pub fn main() !void {
     std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
 
     // for (changes) |change| {
-    //     std.debug.print("{s} {s} {d}\n", .{ change.id, change.operation, change.sequencer });
+    //     std.debug.print("{s} {any} {d}\n", .{ change.id, change.operation, change.sequencer });
     // }
 }

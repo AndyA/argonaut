@@ -3,7 +3,12 @@ pub const LoaderError = error{
     ArraySizeMismatch,
     MissingField,
     BadEnum,
+    TupleSizeMismatch,
 };
+
+fn isOptional(field: std.builtin.Type.StructField) bool {
+    return field.default_value_ptr != null or @typeInfo(field.type) == .optional;
+}
 
 pub fn Loader(comptime T: type) type {
     comptime {
@@ -163,10 +168,14 @@ pub fn Loader(comptime T: type) type {
             },
             .@"struct" => |info| {
                 var child_loaders: [info.fields.len]type = undefined;
+                var required_len: usize = 0;
                 for (info.fields, 0..) |field, i| {
                     child_loaders[i] = Loader(field.type);
+                    if (!isOptional(field))
+                        required_len = i + 1;
                 }
                 const ChildLoaders = child_loaders;
+                const min_tuple_len = required_len;
 
                 return struct {
                     pub const Type = T;
@@ -195,7 +204,24 @@ pub fn Loader(comptime T: type) type {
 
                                 return obj;
                             },
-                            // TODO .array == tuple
+                            .array => |a| {
+                                if (a.len < min_tuple_len or a.len > info.fields.len)
+                                    return LoaderError.TupleSizeMismatch;
+                                var obj: T = undefined;
+                                inline for (info.fields, 0..) |field, i| {
+                                    if (i < a.len) {
+                                        const value = try ChildLoaders[i].load(a[i], alloc);
+                                        @field(obj, field.name) = value;
+                                    } else {
+                                        if (field.defaultValue()) |def| {
+                                            @field(obj, field.name) = def;
+                                        } else if (@typeInfo(field.type) == .optional) {
+                                            @field(obj, field.name) = null;
+                                        } else unreachable;
+                                    }
+                                }
+                                return obj;
+                            },
                             else => {
                                 return LoaderError.TypeMismatch;
                             },
@@ -206,34 +232,28 @@ pub fn Loader(comptime T: type) type {
             .@"enum" => |info| {
                 var kv: [info.fields.len]struct { []const u8, info.tag_type } = undefined;
                 for (info.fields, 0..) |field, i| {
-                    kv[i] = .{ field.name, @as(info.tag_type, @intCast(field.value)) };
+                    kv[i] = .{ field.name, @intCast(field.value) };
                 }
                 const map = StaticStringMap(info.tag_type).initComptime(kv);
                 return struct {
                     pub const Type = T;
 
                     pub fn load(node: JSONNode, alloc: Allocator) !T {
-                        switch (node) {
-                            .string => |str| {
+                        const tag = switch (node) {
+                            .string => |str| blk: {
                                 const enc_len = try string.unescapedLength(str);
                                 const arr = try alloc.alloc(u8, enc_len);
                                 defer alloc.free(arr);
                                 _ = try string.unescapeToBuffer(str, arr);
-                                if (map.get(arr)) |val| {
-                                    return @enumFromInt(val);
-                                }
-                                return LoaderError.BadEnum;
+                                break :blk map.get(arr);
                             },
-                            .safe_string => |str| {
-                                if (map.get(str)) |val| {
-                                    return @enumFromInt(val);
-                                }
-                                return LoaderError.BadEnum;
-                            },
+                            .safe_string => |str| map.get(str),
                             else => {
                                 return LoaderError.TypeMismatch;
                             },
-                        }
+                        };
+                        if (tag) |t| return @enumFromInt(t);
+                        return LoaderError.BadEnum;
                     }
                 };
             },
@@ -273,6 +293,7 @@ test Loader {
 
     const SizeEnum = enum { S, M, L, XL, XXL };
     const EscapeEnum = enum { @"\n", @"\t", @"\r" };
+    const SnackTuple = struct { []const u8, u32, ?[]const []const u8 };
 
     const cases = .{
         tc(usize, "123", 123),
@@ -377,6 +398,12 @@ test Loader {
         tc([]const EscapeEnum,
             \\["\n", "\t", "\r"]
         , &[_]EscapeEnum{ .@"\n", .@"\t", .@"\r" }),
+        tc(SnackTuple,
+            \\["pies", 3]
+        , .{ "pies", 3, null }),
+        tc(SnackTuple,
+            \\["pies", 3, ["meat", "tattie"]]
+        , .{ "pies", 3, &.{ "meat", "tattie" } }),
     };
 
     inline for (cases) |case| {
