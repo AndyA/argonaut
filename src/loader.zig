@@ -422,9 +422,9 @@ test {
 
 const std = @import("std");
 const assert = std.debug.assert;
+const StaticStringMap = std.static_string_map.StaticStringMap;
+const Allocator = std.mem.Allocator;
 
 const JSONNode = @import("./node.zig").JSONNode;
 const JSONParser = @import("./parser.zig").JSONParser;
-const Allocator = std.mem.Allocator;
 const string = @import("./string.zig");
-const StaticStringMap = std.static_string_map.StaticStringMap;
