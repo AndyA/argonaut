@@ -110,7 +110,7 @@ pub const ObjectClass = struct {
 
 pub const ShadowClass = struct {
     const Self = @This();
-    pub const NextMap = std.StringHashMapUnmanaged(Self);
+    pub const NextMap = std.StringHashMapUnmanaged(*Self);
     pub const RootIndex = std.math.maxInt(u32);
     const ctx = std.hash_map.StringContext{};
 
@@ -127,29 +127,34 @@ pub const ShadowClass = struct {
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         var iter = self.next.valueIterator();
         while (iter.next()) |v| {
-            v.deinit(alloc);
+            v.*.deinit(alloc);
         }
         if (self.object_class) |*class| {
             class.deinit(alloc);
         }
-        if (self.size() > 0)
-            alloc.free(self.name);
         self.next.deinit(alloc);
-        self.* = undefined;
+        if (self.size() > 0) {
+            alloc.free(self.name);
+            alloc.destroy(self);
+        } else {
+            self.* = undefined;
+        }
     }
 
     pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) OOM!*Self {
         const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
             const key_name = try alloc.dupe(u8, name);
-            slot.key_ptr.* = key_name;
-            slot.value_ptr.* = Self{
+            const next = try alloc.create(Self);
+            next.* = .{
                 .parent = self,
                 .name = key_name,
                 .index = self.size(),
             };
+            slot.key_ptr.* = key_name;
+            slot.value_ptr.* = next;
         }
-        return slot.value_ptr;
+        return slot.value_ptr.*;
     }
 
     pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {

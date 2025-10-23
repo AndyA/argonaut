@@ -229,6 +229,11 @@ test Loader {
     const XYZoptional = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
     const DefStr = struct { name: []const u8 = "Me!" };
+    const InfoDot = struct {
+        info: Info,
+        pt: XYZoptional,
+        name: DefStr,
+    };
 
     const cases = .{
         tc(usize, "123", 123),
@@ -307,6 +312,20 @@ test Loader {
         tc(DefStr,
             \\{ "ignored": true }
         , .{ .name = "Me!" }),
+        tc(
+            InfoDot,
+            \\{
+            \\  "pt": {"x": 100, "y": 200},
+            \\  "info": {"name": "Andy", "tags": ["zig", "zag"]},
+            \\  "name": {}
+            \\}
+        ,
+            .{
+                .info = .{ .name = "Andy", .tags = &.{ "zig", "zag" } },
+                .pt = .{ .x = 100, .y = 200, .z = null },
+                .name = .{ .name = "Me!" },
+            },
+        ),
     };
 
     inline for (cases) |case| {
