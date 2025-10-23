@@ -2,7 +2,7 @@ const OOM = error{OutOfMemory};
 
 const IndexMap = std.StringHashMapUnmanaged(u32);
 
-fn indexMapForNames(names: []const []const u8, alloc: std.mem.Allocator) OOM!IndexMap {
+fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
     var index: IndexMap = .empty;
     if (names.len > 0) {
         try index.ensureTotalCapacity(alloc, @intCast(names.len));
@@ -20,7 +20,7 @@ pub const SafeObjectClass = struct {
     names: []const []const u8,
     buffer: []u8,
 
-    pub fn initFromNames(alloc: std.mem.Allocator, unsafe_names: []const []const u8) !Self {
+    pub fn initFromNames(alloc: Allocator, unsafe_names: []const []const u8) !Self {
         var buf_size: usize = 0;
         for (unsafe_names) |n| {
             buf_size += try string.unescapedLength(n);
@@ -42,13 +42,13 @@ pub const SafeObjectClass = struct {
         }
 
         return Self{
-            .index_map = try indexMapForNames(names, alloc),
+            .index_map = try indexMapForNames(alloc, names),
             .names = names,
             .buffer = buffer,
         };
     }
 
-    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *Self, alloc: Allocator) void {
         self.index_map.deinit(alloc);
         alloc.free(self.names);
         alloc.free(self.buffer);
@@ -67,7 +67,7 @@ pub const ObjectClass = struct {
     names: []const []const u8,
     safe: ?SafeObjectClass = null,
 
-    pub fn initFromShadow(alloc: std.mem.Allocator, shadow: *const ShadowClass) !Self {
+    pub fn initFromShadow(alloc: Allocator, shadow: *const ShadowClass) !Self {
         const size = shadow.size();
 
         var names = try alloc.alloc([]const u8, size);
@@ -85,13 +85,13 @@ pub const ObjectClass = struct {
         if (!is_safe) safe = try SafeObjectClass.initFromNames(alloc, names);
 
         return Self{
-            .index_map = try indexMapForNames(names, alloc),
+            .index_map = try indexMapForNames(alloc, names),
             .names = names,
             .safe = safe,
         };
     }
 
-    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *Self, alloc: Allocator) void {
         if (self.safe) |*s| {
             s.deinit(alloc);
         }
@@ -124,24 +124,30 @@ pub const ShadowClass = struct {
         return self.index +% 1;
     }
 
-    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
+    fn deinitContents(self: *Self, alloc: Allocator) void {
         var iter = self.next.valueIterator();
         while (iter.next()) |v| {
-            v.*.deinit(alloc);
+            v.*.deinitNonRoot(alloc);
         }
         if (self.object_class) |*class| {
             class.deinit(alloc);
         }
         self.next.deinit(alloc);
-        if (self.size() > 0) {
-            alloc.free(self.name);
-            alloc.destroy(self);
-        } else {
-            self.* = undefined;
-        }
     }
 
-    pub fn getNext(self: *Self, alloc: std.mem.Allocator, name: []const u8) OOM!*Self {
+    fn deinitNonRoot(self: *Self, alloc: Allocator) void {
+        self.deinitContents(alloc);
+        alloc.free(self.name);
+        alloc.destroy(self);
+    }
+
+    pub fn deinit(self: *Self, alloc: Allocator) void {
+        assert(self.size() == 0); // Must be root
+        self.deinitContents(alloc);
+        self.* = undefined;
+    }
+
+    pub fn getNext(self: *Self, alloc: Allocator, name: []const u8) OOM!*Self {
         const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
             const key_name = try alloc.dupe(u8, name);
@@ -157,7 +163,7 @@ pub const ShadowClass = struct {
         return slot.value_ptr.*;
     }
 
-    pub fn getClass(self: *Self, alloc: std.mem.Allocator) !*const ObjectClass {
+    pub fn getClass(self: *Self, alloc: Allocator) !*const ObjectClass {
         if (self.object_class == null)
             self.object_class = try ObjectClass.initFromShadow(alloc, self);
 
@@ -195,5 +201,6 @@ test ShadowClass {
 }
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const string = @import("string.zig");

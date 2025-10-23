@@ -39,7 +39,7 @@ fn walkShadow(shadow: *const ShadowClass, depth: u32) void {
     std.debug.print("{s}\n", .{shadow.name});
     var iter = shadow.next.valueIterator();
     while (iter.next()) |next| {
-        walkShadow(next, depth + 1);
+        walkShadow(next.*, depth + 1);
     }
 }
 

@@ -187,6 +187,7 @@ pub fn Loader(comptime T: type) type {
                                     } else if (@typeInfo(field.type) == .optional) {
                                         @field(obj, field.name) = null;
                                     } else {
+                                        std.debug.print("Missing field {s} in {f}\n", .{ field.name, node });
                                         return LoaderError.MissingField;
                                     }
                                 }
@@ -329,13 +330,12 @@ test Loader {
     };
 
     inline for (cases) |case| {
-        var gpa = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer gpa.deinit();
-        const alloc = gpa.allocator();
+        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+        defer arena.deinit();
+        const alloc = arena.allocator();
 
-        const L = Loader(case.T);
         const node = try p.parseToAssembly(case.json);
-        const got = try L.load(node, alloc);
+        const got = try Loader(case.T).load(node, alloc);
 
         try std.testing.expectEqualDeep(case.want, got);
     }
