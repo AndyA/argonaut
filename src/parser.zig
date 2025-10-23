@@ -277,7 +277,7 @@ pub const JSONParser = struct {
         return node;
     }
 
-    fn parseMulti(self: *Self, depth: u32) Error!JSONNode {
+    fn parseMultiJSON(self: *Self, depth: u32) Error!JSONNode {
         var scratch = try self.getScratch(depth);
         while (true) {
             self.state.skipSpace();
@@ -370,20 +370,20 @@ pub const JSONParser = struct {
         return self.takeAssembly();
     }
 
-    pub fn parseToAssembly(self: *Self, src: []const u8) Error!JSONNode {
+    pub fn parse(self: *Self, src: []const u8) Error!JSONNode {
         return self.parseUsing(src, Self.parseValue);
     }
 
-    pub fn parseMultiToAssembly(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseUsing(src, Self.parseMulti);
+    pub fn parseMulti(self: *Self, src: []const u8) Error!JSONNode {
+        return self.parseUsing(src, Self.parseMultiJSON);
     }
 
     pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-        return self.parseWithAllocator(alloc, src, Self.parseToAssembly);
+        return self.parseWithAllocator(alloc, src, Self.parse);
     }
 
     pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-        return self.parseWithAllocator(alloc, src, Self.parseMultiToAssembly);
+        return self.parseWithAllocator(alloc, src, Self.parseMulti);
     }
 };
 
@@ -428,7 +428,7 @@ test JSONParser {
         var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
         defer w.deinit();
 
-        const res = try p.parseToAssembly(case);
+        const res = try p.parse(case);
         try w.writer.print("{f}", .{res});
         var output = w.toArrayList();
         defer output.deinit(alloc);

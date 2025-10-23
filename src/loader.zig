@@ -409,7 +409,7 @@ test Loader {
         defer arena.deinit();
         const alloc = arena.allocator();
 
-        const node = try p.parseToAssembly(case.json);
+        const node = try p.parse(case.json);
         const got = try Loader(case.T).load(node, alloc);
 
         try std.testing.expectEqualDeep(case.want, got);

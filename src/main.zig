@@ -11,7 +11,7 @@ test {
 fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
     for (1..times + 1) |i| {
         const start = std.time.microTimestamp();
-        _ = p.parseMultiToAssembly(src) catch |err| {
+        _ = p.parseMulti(src) catch |err| {
             std.debug.print("{s} at line {d}, column {d} (...{s}...)\n", .{
                 @errorName(err),
                 p.state.line,
