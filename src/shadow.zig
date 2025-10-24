@@ -83,6 +83,7 @@ pub const ShadowClass = struct {
     name: []const u8 = "$",
     next: NextMap = .empty,
     index: u32 = RootIndex,
+    usage: usize = 0,
 
     pub fn size(self: *const Self) u32 {
         return self.index +% 1;
@@ -107,6 +108,12 @@ pub const ShadowClass = struct {
         self.* = undefined;
     }
 
+    pub fn startWalk(self: *Self) *Self {
+        assert(self.size() == 0);
+        self.usage +|= 1;
+        return self;
+    }
+
     pub fn getNext(self: *Self, alloc: Allocator, name: []const u8) OOM!*Self {
         const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
         if (!slot.found_existing) {
@@ -120,6 +127,7 @@ pub const ShadowClass = struct {
             slot.key_ptr.* = key_name;
             slot.value_ptr.* = next;
         }
+        slot.value_ptr.*.usage +|= 1;
         return slot.value_ptr.*;
     }
 

@@ -224,7 +224,7 @@ pub const JSONParser = struct {
         var scratch = try self.getScratch(depth);
         // Make a space for the class
         try scratch.append(self.work_alloc, .{ .null = {} });
-        var shadow = &self.shadow_root;
+        var shadow = self.shadow_root.startWalk();
 
         // Empty object is a special case
         if (self.state.peek() == '}') {
