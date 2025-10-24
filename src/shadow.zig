@@ -13,59 +13,12 @@ fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
     return index;
 }
 
-pub const SafeObjectClass = struct {
-    const Self = @This();
-
-    index_map: IndexMap = .empty,
-    names: []const []const u8,
-    buffer: []u8,
-
-    pub fn initFromNames(alloc: Allocator, unsafe_names: []const []const u8) !Self {
-        var buf_size: usize = 0;
-        for (unsafe_names) |n| {
-            buf_size += try string.unescapedLength(n);
-        }
-
-        var buffer = try alloc.alloc(u8, buf_size);
-        errdefer alloc.free(buffer);
-
-        var names = try alloc.alloc([]const u8, unsafe_names.len);
-        errdefer alloc.free(names);
-
-        var buf_pos: usize = 0;
-        for (unsafe_names, 0..) |n, i| {
-            const enc_len = try string.unescapeToBuffer(n, buffer[buf_pos..]);
-            const next_pos = buf_pos + enc_len;
-            const name = buffer[buf_pos..next_pos];
-            buf_pos = next_pos;
-            names[i] = name;
-        }
-
-        return Self{
-            .index_map = try indexMapForNames(alloc, names),
-            .names = names,
-            .buffer = buffer,
-        };
-    }
-
-    pub fn deinit(self: *Self, alloc: Allocator) void {
-        self.index_map.deinit(alloc);
-        alloc.free(self.names);
-        alloc.free(self.buffer);
-        self.* = undefined;
-    }
-
-    pub fn get(self: Self, key: []const u8) ?u32 {
-        return self.index_map.get(key);
-    }
-};
-
 pub const ObjectClass = struct {
     const Self = @This();
 
     index_map: IndexMap = .empty,
     names: []const []const u8,
-    safe: ?SafeObjectClass = null,
+    safe_names: ?[]const []const u8,
 
     pub fn initFromShadow(alloc: Allocator, shadow: *const ShadowClass) !Self {
         const size = shadow.size();
@@ -74,36 +27,47 @@ pub const ObjectClass = struct {
         errdefer alloc.free(names);
 
         var class = shadow;
-        var is_safe = true;
+        var needs_escape = false;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;
-            if (!string.isSafe(class.name)) is_safe = false;
+            if (!string.isSafe(class.name)) needs_escape = true;
         }
 
-        var safe: ?SafeObjectClass = null;
-        if (!is_safe) safe = try SafeObjectClass.initFromNames(alloc, names);
+        const safe_names: ?[]const []const u8 = if (needs_escape) blk: {
+            var safe = try alloc.alloc([]const u8, names.len);
+            for (names, 0..) |n, i| {
+                const enc_len = try string.unescapedLength(n);
+                const arr = try alloc.alloc(u8, enc_len);
+                errdefer alloc.free(arr);
+                _ = try string.unescapeToBuffer(n, arr);
+                safe[i] = arr;
+            }
+            break :blk safe;
+        } else null;
 
         return Self{
-            .index_map = try indexMapForNames(alloc, names),
+            .index_map = try indexMapForNames(alloc, safe_names orelse names),
             .names = names,
-            .safe = safe,
+            .safe_names = safe_names,
         };
     }
 
     pub fn deinit(self: *Self, alloc: Allocator) void {
-        if (self.safe) |*s| {
-            s.deinit(alloc);
+        if (self.safe_names) |safe| {
+            for (safe) |s| alloc.free(s);
+            alloc.free(safe);
         }
         self.index_map.deinit(alloc);
         alloc.free(self.names);
         self.* = undefined;
     }
 
+    pub fn keys(self: Self) []const []const u8 {
+        return self.safe_names orelse self.names;
+    }
+
     pub fn get(self: Self, key: []const u8) ?u32 {
-        if (self.safe) |s| {
-            return s.get(key);
-        }
         return self.index_map.get(key);
     }
 };
@@ -126,12 +90,8 @@ pub const ShadowClass = struct {
 
     fn deinitContents(self: *Self, alloc: Allocator) void {
         var iter = self.next.valueIterator();
-        while (iter.next()) |v| {
-            v.*.deinitNonRoot(alloc);
-        }
-        if (self.object_class) |*class| {
-            class.deinit(alloc);
-        }
+        while (iter.next()) |v| v.*.deinitNonRoot(alloc);
+        if (self.object_class) |*class| class.deinit(alloc);
         self.next.deinit(alloc);
     }
 
