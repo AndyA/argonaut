@@ -43,7 +43,7 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number => |n| std.fmt.parseInt(T, n, 10),
+                        .number, .safe_string, .string => |n| std.fmt.parseInt(T, n, 10),
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -55,7 +55,7 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number => |n| std.fmt.parseFloat(T, n),
+                        .number, .safe_string, .string => |n| std.fmt.parseFloat(T, n),
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -292,6 +292,7 @@ test Loader {
 
     const cases = .{
         tc(usize, "123", 123),
+        tc(usize, "\"123\"", 123),
         tc(?usize, "null", null),
         tc(?usize, "123", 123),
 
