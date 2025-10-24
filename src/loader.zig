@@ -43,7 +43,10 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number, .safe_string, .string => |n| std.fmt.parseInt(T, n, 10),
+                        .number, .safe_string, .string => |n| std.fmt.parseInt(T, n, 10) catch |err| {
+                            std.debug.print("{s}: \"{s}\"\n", .{ @errorName(err), n });
+                            return err;
+                        },
                         else => LoaderError.TypeMismatch,
                     };
                 }

@@ -39,11 +39,11 @@ const EbuAudioLayout = enum {
 };
 
 const TechnicalMetadata = struct {
-    audioChannelCount: ?u32,
-    bbcAspectRatio: ?BBCAspectRatio,
-    containerFormat: ?ContainerFormat,
-    duration: ?u32,
-    ebuAudioLayout: ?EbuAudioLayout,
+    // audioChannelCount: ?u32,
+    // bbcAspectRatio: ?BBCAspectRatio,
+    // containerFormat: ?ContainerFormat,
+    // duration: ?u32,
+    // ebuAudioLayout: ?EbuAudioLayout,
     editRate: ?EditRate,
     formatDescription: ?[]const u8,
     md5Hash: ?[]const u8,
