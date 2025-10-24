@@ -78,7 +78,7 @@ const Source = struct {
 
 const Document = struct {
     bytesObject: BytesObject,
-    deleted: ?bool,
+    deleted: bool = false,
     source: Source,
     timestamp: []const u8,
 };
