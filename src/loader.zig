@@ -293,6 +293,7 @@ test Loader {
     const cases = .{
         tc(usize, "123", 123),
         tc(?usize, "null", null),
+        tc(?usize, "123", 123),
 
         tc([]const u8,
             \\"Hello"
