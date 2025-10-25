@@ -109,7 +109,6 @@ pub const ShadowClass = struct {
     }
 
     pub fn startWalk(self: *Self) *Self {
-        assert(self.size() == 0);
         self.usage +|= 1;
         return self;
     }
@@ -127,8 +126,7 @@ pub const ShadowClass = struct {
             slot.key_ptr.* = key_name;
             slot.value_ptr.* = next;
         }
-        slot.value_ptr.*.usage +|= 1;
-        return slot.value_ptr.*;
+        return slot.value_ptr.*.startWalk();
     }
 
     pub fn getClass(self: *Self, alloc: Allocator) !*const ObjectClass {
