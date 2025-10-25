@@ -371,19 +371,19 @@ pub const JSONParser = struct {
     }
 
     pub fn parse(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseUsing(src, Self.parseValue);
+        return self.parseUsing(src, parseValue);
     }
 
     pub fn parseMulti(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseUsing(src, Self.parseMultiJSON);
+        return self.parseUsing(src, parseMultiJSON);
     }
 
     pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-        return self.parseWithAllocator(alloc, src, Self.parse);
+        return self.parseWithAllocator(alloc, src, parse);
     }
 
     pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-        return self.parseWithAllocator(alloc, src, Self.parseMulti);
+        return self.parseWithAllocator(alloc, src, parseMulti);
     }
 };
 
