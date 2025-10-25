@@ -277,7 +277,7 @@ pub const JSONParser = struct {
         return node;
     }
 
-    fn parseMultiJSON(self: *Self, depth: u32) Error!JSONNode {
+    fn parseMultiNode(self: *Self, depth: u32) Error!JSONNode {
         var scratch = try self.getScratch(depth);
         while (true) {
             self.state.skipSpace();
@@ -375,7 +375,7 @@ pub const JSONParser = struct {
     }
 
     pub fn parseMulti(self: *Self, src: []const u8) Error!JSONNode {
-        return self.parseUsing(src, parseMultiJSON);
+        return self.parseUsing(src, parseMultiNode);
     }
 
     pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
