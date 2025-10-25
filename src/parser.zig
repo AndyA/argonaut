@@ -297,8 +297,7 @@ pub const JSONParser = struct {
 
     fn startParsing(self: *Self, src: []const u8) void {
         assert(!self.parsing);
-        self.state = ParserState{};
-        self.state.src = src;
+        self.state = ParserState{ .src = src };
         self.assembly.items.len = 0;
         self.parsing = true;
     }
