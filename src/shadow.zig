@@ -34,7 +34,7 @@ pub fn ObjectClass(comptime Context: type) type {
             while (class.size() > 0) : (class = class.parent.?) {
                 assert(class.index < size);
                 names[class.index] = class.name;
-                if (!string.isSafe(class.name)) unsafe = true;
+                if (!string.isEscaped(class.name)) unsafe = true;
             }
 
             const safe_names: ?[]const []const u8 = if (unsafe) blk: {

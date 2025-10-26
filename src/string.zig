@@ -1,10 +1,10 @@
-pub fn isSafe(str: []const u8) bool {
+pub fn isEscaped(str: []const u8) bool {
     return std.mem.findScalar(u8, str, '\\') == null;
 }
 
-test isSafe {
-    try std.testing.expect(isSafe("Hello"));
-    try std.testing.expect(!isSafe("\\\"Hello\\\""));
+test isEscaped {
+    try std.testing.expect(isEscaped("Hello"));
+    try std.testing.expect(!isEscaped("\\\"Hello\\\""));
 }
 
 const Error = error{BadUnicodeEscape};
