@@ -237,16 +237,14 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
                 pub const Type = T;
 
                 pub fn load(node: NT, alloc: Allocator) !T {
-                    const tag = switch (node) {
+                    const tag = try switch (node) {
                         .string => |str| blk: {
                             const out = try string.unescapeAlloc(str, alloc);
                             defer alloc.free(out);
                             break :blk map.get(out);
                         },
                         .safe_string => |str| map.get(str),
-                        else => {
-                            return LoaderError.TypeMismatch;
-                        },
+                        else => LoaderError.TypeMismatch,
                     };
                     if (tag) |t| return @enumFromInt(t);
                     return LoaderError.UnknownEnumValue;
