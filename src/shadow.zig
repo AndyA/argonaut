@@ -49,15 +49,23 @@ pub fn ObjectClass(comptime Context: type) type {
                 break :blk safe;
             } else null;
 
-            return Self{
+            const self = Self{
                 .index_map = try indexMapForNames(alloc, safe_names orelse names),
                 .names = names,
                 .safe_names = safe_names,
-                .context = {},
+                .context = if (@typeInfo(Context) == .void) {} else Context{},
             };
+
+            if (@typeInfo(Context) != .void and @hasDecl(Context, "init"))
+                try self.context.init(alloc);
+
+            return self;
         }
 
         pub fn deinit(self: *Self, alloc: Allocator) void {
+            if (@typeInfo(Context) != .void and @hasDecl(Context, "deinit"))
+                self.context.deinit(alloc);
+
             if (self.safe_names) |safe| {
                 for (safe) |s| alloc.free(s);
                 alloc.free(safe);
