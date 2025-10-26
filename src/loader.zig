@@ -239,10 +239,8 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
                 pub fn load(node: NT, alloc: Allocator) !T {
                     const tag = switch (node) {
                         .string => |str| blk: {
-                            // const out_len = try string.unescapedLength(str);
                             const out = try string.unescapeAlloc(str, alloc);
                             defer alloc.free(out);
-                            // _ = try string.unescapeToBuffer(str, out);
                             break :blk map.get(out);
                         },
                         .safe_string => |str| map.get(str),
