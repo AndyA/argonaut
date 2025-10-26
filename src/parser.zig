@@ -1,8 +1,8 @@
 pub fn JSONParser(comptime Context: type) type {
     return struct {
         const Self = @This();
-        pub const NT = JSONNode(Context);
-        pub const NodeList = std.ArrayListUnmanaged(NT);
+        pub const NodeType = JSONNode(Context);
+        pub const NodeList = std.ArrayListUnmanaged(NodeType);
         const Allocator = std.mem.Allocator;
 
         pub const Error = error{
@@ -76,8 +76,8 @@ pub fn JSONParser(comptime Context: type) type {
         fn parseLiteral(
             self: *Self,
             comptime lit: []const u8,
-            comptime node: NT,
-        ) Error!NT {
+            comptime node: NodeType,
+        ) Error!NodeType {
             if (!self.state.checkLiteral(lit)) {
                 @branchHint(.unlikely);
                 return Error.BadToken;
@@ -85,7 +85,7 @@ pub fn JSONParser(comptime Context: type) type {
             return node;
         }
 
-        fn parseString(self: *Self) Error!NT {
+        fn parseString(self: *Self) Error!NodeType {
             var safe = true;
             _ = self.state.next();
             self.state.setMark();
@@ -128,7 +128,7 @@ pub fn JSONParser(comptime Context: type) type {
             if (self.state.pos == start) return Error.MissingDigits;
         }
 
-        fn parseNumber(self: *Self) Error!NT {
+        fn parseNumber(self: *Self) Error!NodeType {
             self.state.setMark();
             const nc = self.state.peek();
             if (nc == '-') {
@@ -167,7 +167,7 @@ pub fn JSONParser(comptime Context: type) type {
             return scratch;
         }
 
-        fn appendToAssembly(self: *Self, nodes: []const NT) Error![]const NT {
+        fn appendToAssembly(self: *Self, nodes: []const NodeType) Error![]const NodeType {
             const start = self.assembly.items.len;
             const needed = self.assembly.items.len + nodes.len;
             if (self.assembly.capacity < needed) {
@@ -191,7 +191,7 @@ pub fn JSONParser(comptime Context: type) type {
             return self.assembly.items[start..];
         }
 
-        fn parseArray(self: *Self, depth: u32) Error!NT {
+        fn parseArray(self: *Self, depth: u32) Error!NodeType {
             _ = self.state.next();
             try self.checkMore();
             var scratch = try self.getScratch(depth);
@@ -219,7 +219,7 @@ pub fn JSONParser(comptime Context: type) type {
             return .{ .array = items };
         }
 
-        fn parseObject(self: *Self, depth: u32) Error!NT {
+        fn parseObject(self: *Self, depth: u32) Error!NodeType {
             _ = self.state.next();
             try self.checkMore();
 
@@ -262,10 +262,10 @@ pub fn JSONParser(comptime Context: type) type {
             return .{ .object = items };
         }
 
-        fn parseValue(self: *Self, depth: u32) Error!NT {
+        fn parseValue(self: *Self, depth: u32) Error!NodeType {
             try self.checkMore();
             const nc = self.state.peek();
-            const node: NT = switch (nc) {
+            const node: NodeType = switch (nc) {
                 'n' => try self.parseLiteral("null", .{ .null = {} }),
                 'f' => try self.parseLiteral("false", .{ .boolean = false }),
                 't' => try self.parseLiteral("true", .{ .boolean = true }),
@@ -279,7 +279,7 @@ pub fn JSONParser(comptime Context: type) type {
             return node;
         }
 
-        fn parseMultiNode(self: *Self, depth: u32) Error!NT {
+        fn parseMultiNode(self: *Self, depth: u32) Error!NodeType {
             var scratch = try self.getScratch(depth);
             while (true) {
                 self.state.skipSpace();
@@ -320,14 +320,14 @@ pub fn JSONParser(comptime Context: type) type {
             return self.assembly;
         }
 
-        const ParseFn = fn (self: *Self, src: []const u8) Error!NT;
-        const ParseDepthFn = fn (self: *Self, depth: u32) Error!NT;
+        const ParseFn = fn (self: *Self, src: []const u8) Error!NodeType;
+        const ParseDepthFn = fn (self: *Self, depth: u32) Error!NodeType;
 
         inline fn parseUsing(
             self: *Self,
             src: []const u8,
             comptime parser: ParseDepthFn,
-        ) Error!NT {
+        ) Error!NodeType {
             try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
 
             RESTART: while (true) {
@@ -371,11 +371,11 @@ pub fn JSONParser(comptime Context: type) type {
             return self.takeAssembly();
         }
 
-        pub fn parse(self: *Self, src: []const u8) Error!NT {
+        pub fn parse(self: *Self, src: []const u8) Error!NodeType {
             return self.parseUsing(src, parseValue);
         }
 
-        pub fn parseMulti(self: *Self, src: []const u8) Error!NT {
+        pub fn parseMulti(self: *Self, src: []const u8) Error!NodeType {
             return self.parseUsing(src, parseMultiNode);
         }
 
