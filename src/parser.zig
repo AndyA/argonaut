@@ -243,9 +243,7 @@ pub fn JSONParser(comptime Context: type) type {
                     try scratch.append(self.work_alloc, node);
                     try self.checkMore();
                     const nc = self.state.next();
-                    if (nc == '}') {
-                        break;
-                    }
+                    if (nc == '}') break;
                     if (nc != ',') {
                         @branchHint(.unlikely);
                         return Error.MissingComma;
