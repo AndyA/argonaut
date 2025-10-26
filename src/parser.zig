@@ -61,6 +61,11 @@ pub fn JSONParser(comptime Context: type) type {
             self.assembly_alloc = alloc;
         }
 
+        pub fn takeAssembly(self: *Self) Error!NodeList {
+            defer self.assembly = .empty;
+            return self.assembly;
+        }
+
         fn checkEof(self: *const Self) Error!void {
             if (self.state.eof()) {
                 @branchHint(.unlikely);
@@ -311,11 +316,6 @@ pub fn JSONParser(comptime Context: type) type {
             self.state.skipSpace();
             if (!self.state.eof())
                 return Error.JunkAfterInput;
-        }
-
-        pub fn takeAssembly(self: *Self) Error!NodeList {
-            defer self.assembly = .empty;
-            return self.assembly;
         }
 
         const ParseFn = fn (self: *Self, src: []const u8) Error!NodeType;
