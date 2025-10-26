@@ -276,12 +276,7 @@ test Loader {
     const XYZoptional = struct { x: i32, y: i32, z: ?i32 };
     const Info = struct { name: []const u8, tags: ?[]const []const u8 };
     const DefStr = struct { name: []const u8 = "Me!" };
-    const InfoDot = struct {
-        info: Info,
-        pt: XYZoptional,
-        name: DefStr,
-    };
-
+    const InfoDot = struct { info: Info, pt: XYZoptional, name: DefStr };
     const SizeEnum = enum { S, M, L, XL, XXL };
     const EscapeEnum = enum { @"\n", @"\t", @"\r" };
     const SnackTuple = struct { []const u8, u32, ?[]const []const u8 };
