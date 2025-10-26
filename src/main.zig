@@ -1,6 +1,6 @@
 const std = @import("std");
-const JSONParser = @import("./parser.zig").JSONParser;
-const ShadowClass = @import("./shadow.zig").ShadowClass;
+const jp = @import("./parser.zig");
+const sc = @import("./shadow.zig");
 
 test {
     _ = @import("./parser.zig");
@@ -8,7 +8,10 @@ test {
     _ = @import("./string.zig");
 }
 
-fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
+const SC = sc.ShadowClass(void);
+const JP = jp.JSONParser(void);
+
+fn benchmark(p: *JP, src: []const u8, times: usize) !void {
     for (1..times + 1) |i| {
         const start = std.time.microTimestamp();
         _ = p.parseMulti(src) catch |err| {
@@ -27,7 +30,7 @@ fn benchmark(p: *JSONParser, src: []const u8, times: usize) !void {
     }
 }
 
-fn walkShadow(shadow: *const ShadowClass, depth: u32) void {
+fn walkShadow(shadow: *const SC, depth: u32) void {
     for (0..depth) |_| {
         std.debug.print("  ", .{});
     }
@@ -51,7 +54,7 @@ pub fn main() !void {
         var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer gpa.deinit();
         const alloc = gpa.allocator();
-        var p = try JSONParser.init(alloc);
+        var p = try jp.JSONParser(void).init(alloc);
         defer p.deinit();
         const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
         defer alloc.free(src);

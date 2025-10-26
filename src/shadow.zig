@@ -13,133 +13,142 @@ fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
     return index;
 }
 
-pub const ObjectClass = struct {
-    const Self = @This();
+pub fn ObjectClass(comptime Context: type) type {
+    return struct {
+        const Self = @This();
+        const SC = ShadowClass(Context);
 
-    index_map: IndexMap = .empty,
-    names: []const []const u8,
-    safe_names: ?[]const []const u8,
+        index_map: IndexMap = .empty,
+        names: []const []const u8,
+        safe_names: ?[]const []const u8,
+        context: Context,
 
-    pub fn initFromShadow(alloc: Allocator, shadow: *const ShadowClass) !Self {
-        const size = shadow.size();
+        pub fn initFromShadow(alloc: Allocator, shadow: *const SC) !Self {
+            const size = shadow.size();
 
-        var names = try alloc.alloc([]const u8, size);
-        errdefer alloc.free(names);
+            var names = try alloc.alloc([]const u8, size);
+            errdefer alloc.free(names);
 
-        var class = shadow;
-        var unsafe = false;
-        while (class.size() > 0) : (class = class.parent.?) {
-            assert(class.index < size);
-            names[class.index] = class.name;
-            if (!string.isSafe(class.name)) unsafe = true;
-        }
-
-        const safe_names: ?[]const []const u8 = if (unsafe) blk: {
-            var safe = try alloc.alloc([]const u8, names.len);
-            for (names, 0..) |n, i| {
-                const enc_len = try string.unescapedLength(n);
-                const arr = try alloc.alloc(u8, enc_len);
-                errdefer alloc.free(arr);
-                _ = try string.unescapeToBuffer(n, arr);
-                safe[i] = arr;
+            var class = shadow;
+            var unsafe = false;
+            while (class.size() > 0) : (class = class.parent.?) {
+                assert(class.index < size);
+                names[class.index] = class.name;
+                if (!string.isSafe(class.name)) unsafe = true;
             }
-            break :blk safe;
-        } else null;
 
-        return Self{
-            .index_map = try indexMapForNames(alloc, safe_names orelse names),
-            .names = names,
-            .safe_names = safe_names,
-        };
-    }
+            const safe_names: ?[]const []const u8 = if (unsafe) blk: {
+                var safe = try alloc.alloc([]const u8, names.len);
+                for (names, 0..) |n, i| {
+                    const enc_len = try string.unescapedLength(n);
+                    const arr = try alloc.alloc(u8, enc_len);
+                    errdefer alloc.free(arr);
+                    _ = try string.unescapeToBuffer(n, arr);
+                    safe[i] = arr;
+                }
+                break :blk safe;
+            } else null;
 
-    pub fn deinit(self: *Self, alloc: Allocator) void {
-        if (self.safe_names) |safe| {
-            for (safe) |s| alloc.free(s);
-            alloc.free(safe);
-        }
-        self.index_map.deinit(alloc);
-        alloc.free(self.names);
-        self.* = undefined;
-    }
-
-    pub fn keys(self: Self) []const []const u8 {
-        return self.safe_names orelse self.names;
-    }
-
-    pub fn get(self: Self, key: []const u8) ?u32 {
-        return self.index_map.get(key);
-    }
-};
-
-pub const ShadowClass = struct {
-    const Self = @This();
-    pub const NextMap = std.StringHashMapUnmanaged(*Self);
-    pub const RootIndex = std.math.maxInt(u32);
-    const ctx = std.hash_map.StringContext{};
-
-    parent: ?*const Self = null,
-    object_class: ?ObjectClass = null,
-    name: []const u8 = "$",
-    next: NextMap = .empty,
-    index: u32 = RootIndex,
-    usage: usize = 0,
-
-    pub fn size(self: *const Self) u32 {
-        return self.index +% 1;
-    }
-
-    fn deinitContents(self: *Self, alloc: Allocator) void {
-        var iter = self.next.valueIterator();
-        while (iter.next()) |v| v.*.deinitNonRoot(alloc);
-        if (self.object_class) |*class| class.deinit(alloc);
-        self.next.deinit(alloc);
-    }
-
-    fn deinitNonRoot(self: *Self, alloc: Allocator) void {
-        self.deinitContents(alloc);
-        alloc.free(self.name);
-        alloc.destroy(self);
-    }
-
-    pub fn deinit(self: *Self, alloc: Allocator) void {
-        assert(self.size() == 0); // Must be root
-        self.deinitContents(alloc);
-        self.* = undefined;
-    }
-
-    pub fn startWalk(self: *Self) *Self {
-        self.usage +|= 1;
-        return self;
-    }
-
-    pub fn getNext(self: *Self, alloc: Allocator, name: []const u8) OOM!*Self {
-        const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
-        if (!slot.found_existing) {
-            const key_name = try alloc.dupe(u8, name);
-            const next = try alloc.create(Self);
-            next.* = .{
-                .parent = self,
-                .name = key_name,
-                .index = self.size(),
+            return Self{
+                .index_map = try indexMapForNames(alloc, safe_names orelse names),
+                .names = names,
+                .safe_names = safe_names,
+                .context = {},
             };
-            slot.key_ptr.* = key_name;
-            slot.value_ptr.* = next;
         }
-        return slot.value_ptr.*.startWalk();
-    }
 
-    pub fn getClass(self: *Self, alloc: Allocator) !*const ObjectClass {
-        if (self.object_class == null)
-            self.object_class = try ObjectClass.initFromShadow(alloc, self);
+        pub fn deinit(self: *Self, alloc: Allocator) void {
+            if (self.safe_names) |safe| {
+                for (safe) |s| alloc.free(s);
+                alloc.free(safe);
+            }
+            self.index_map.deinit(alloc);
+            alloc.free(self.names);
+            self.* = undefined;
+        }
 
-        return &self.object_class.?;
-    }
-};
+        pub fn keys(self: Self) []const []const u8 {
+            return self.safe_names orelse self.names;
+        }
+
+        pub fn get(self: Self, key: []const u8) ?u32 {
+            return self.index_map.get(key);
+        }
+    };
+}
+
+pub fn ShadowClass(comptime Context: type) type {
+    return struct {
+        const Self = @This();
+        pub const NextMap = std.StringHashMapUnmanaged(*Self);
+        pub const OC = ObjectClass(Context);
+        pub const RootIndex = std.math.maxInt(u32);
+        const ctx = std.hash_map.StringContext{};
+
+        parent: ?*const Self = null,
+        object_class: ?OC = null,
+        name: []const u8 = "$",
+        next: NextMap = .empty,
+        index: u32 = RootIndex,
+        usage: usize = 0,
+
+        pub fn size(self: *const Self) u32 {
+            return self.index +% 1;
+        }
+
+        fn deinitContents(self: *Self, alloc: Allocator) void {
+            var iter = self.next.valueIterator();
+            while (iter.next()) |v| v.*.deinitNonRoot(alloc);
+            if (self.object_class) |*class| class.deinit(alloc);
+            self.next.deinit(alloc);
+        }
+
+        fn deinitNonRoot(self: *Self, alloc: Allocator) void {
+            self.deinitContents(alloc);
+            alloc.free(self.name);
+            alloc.destroy(self);
+        }
+
+        pub fn deinit(self: *Self, alloc: Allocator) void {
+            assert(self.size() == 0); // Must be root
+            self.deinitContents(alloc);
+            self.* = undefined;
+        }
+
+        pub fn startWalk(self: *Self) *Self {
+            self.usage +|= 1;
+            return self;
+        }
+
+        pub fn getNext(self: *Self, alloc: Allocator, name: []const u8) OOM!*Self {
+            const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
+            if (!slot.found_existing) {
+                const key_name = try alloc.dupe(u8, name);
+                const next = try alloc.create(Self);
+                next.* = .{
+                    .parent = self,
+                    .name = key_name,
+                    .index = self.size(),
+                };
+                slot.key_ptr.* = key_name;
+                slot.value_ptr.* = next;
+            }
+            return slot.value_ptr.*.startWalk();
+        }
+
+        pub fn getClass(self: *Self, alloc: Allocator) !*const OC {
+            if (self.object_class == null)
+                self.object_class = try OC.initFromShadow(alloc, self);
+
+            return &self.object_class.?;
+        }
+    };
+}
 
 test ShadowClass {
+    const SC = ShadowClass(void);
     const alloc = std.testing.allocator;
-    var root = ShadowClass{};
+    var root = SC{};
     defer root.deinit(alloc);
 
     try std.testing.expectEqual(root.name, "$");

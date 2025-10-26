@@ -1,6 +1,8 @@
 const std = @import("std");
-const JSONParser = @import("./parser.zig").JSONParser;
-const Loader = @import("./loader.zig").Loader;
+const jp = @import("./parser.zig");
+const LoaderWithContext = @import("./loader.zig").Loader;
+
+const JP = jp.JSONParser(void);
 
 const Locator = struct {
     resource: []const u8,
@@ -100,7 +102,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var p = try JSONParser.init(alloc);
+    var p = try JP.init(alloc);
     defer p.deinit();
 
     const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
@@ -109,7 +111,7 @@ pub fn main() !void {
     const node = try p.parseMulti(src);
 
     const start = std.time.microTimestamp();
-    const changes = try Loader([]const Change).load(node, alloc);
+    const changes = try LoaderWithContext([]const Change, void).load(node, alloc);
     const end = std.time.microTimestamp();
 
     const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
