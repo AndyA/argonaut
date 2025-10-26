@@ -73,6 +73,45 @@ pub fn JSONParser(comptime Context: type) type {
             try self.checkEof();
         }
 
+        fn checkDigits(self: *Self) Error!void {
+            const start = self.state.pos;
+            self.state.skipDigits();
+            if (self.state.pos == start) return Error.MissingDigits;
+        }
+
+        fn getScratch(self: *Self, depth: u32) Error!*NodeList {
+            while (self.scratch.items.len <= depth) {
+                try self.scratch.append(self.work_alloc, .empty);
+            }
+            var scratch = &self.scratch.items[depth];
+            scratch.items.len = 0;
+            return scratch;
+        }
+
+        fn appendToAssembly(self: *Self, nodes: []const NodeType) Error![]const NodeType {
+            const start = self.assembly.items.len;
+            const needed = self.assembly.items.len + nodes.len;
+            if (self.assembly.capacity < needed) {
+                const old_ptr = self.assembly.items.ptr;
+                try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
+
+                // Track the maximum capacity so that if we give our assembly away we can
+                // pre-size the replacement appropriately.
+                self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
+
+                // If the assembly buffer has moved, restart the parser to correct pointers
+                // into the buffer. This will tend to stop happening once the buffer has
+                // grown large enough.
+                if (self.assembly.items.ptr != old_ptr) {
+                    return Error.RestartParser;
+                }
+            }
+
+            self.assembly.appendSliceAssumeCapacity(nodes);
+
+            return self.assembly.items[start..];
+        }
+
         fn parseLiteral(
             self: *Self,
             comptime lit: []const u8,
@@ -122,12 +161,6 @@ pub fn JSONParser(comptime Context: type) type {
             };
         }
 
-        fn checkDigits(self: *Self) Error!void {
-            const start = self.state.pos;
-            self.state.skipDigits();
-            if (self.state.pos == start) return Error.MissingDigits;
-        }
-
         fn parseNumber(self: *Self) Error!NodeType {
             self.state.setMark();
             const nc = self.state.peek();
@@ -156,39 +189,6 @@ pub fn JSONParser(comptime Context: type) type {
                 }
             }
             return .{ .number = self.state.takeMarked() };
-        }
-
-        fn getScratch(self: *Self, depth: u32) Error!*NodeList {
-            while (self.scratch.items.len <= depth) {
-                try self.scratch.append(self.work_alloc, .empty);
-            }
-            var scratch = &self.scratch.items[depth];
-            scratch.items.len = 0;
-            return scratch;
-        }
-
-        fn appendToAssembly(self: *Self, nodes: []const NodeType) Error![]const NodeType {
-            const start = self.assembly.items.len;
-            const needed = self.assembly.items.len + nodes.len;
-            if (self.assembly.capacity < needed) {
-                const old_ptr = self.assembly.items.ptr;
-                try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
-
-                // Track the maximum capacity so that if we give our assembly away we can
-                // pre-size the replacement appropriately.
-                self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
-
-                // If the assembly buffer has moved, restart the parser to correct pointers
-                // into the buffer. This will tend to stop happening once the buffer has
-                // grown large enough.
-                if (self.assembly.items.ptr != old_ptr) {
-                    return Error.RestartParser;
-                }
-            }
-
-            self.assembly.appendSliceAssumeCapacity(nodes);
-
-            return self.assembly.items[start..];
         }
 
         fn parseArray(self: *Self, depth: u32) Error!NodeType {
