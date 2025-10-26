@@ -27,14 +27,14 @@ pub const ObjectClass = struct {
         errdefer alloc.free(names);
 
         var class = shadow;
-        var needs_escape = false;
+        var unsafe = false;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;
-            if (!string.isSafe(class.name)) needs_escape = true;
+            if (!string.isSafe(class.name)) unsafe = true;
         }
 
-        const safe_names: ?[]const []const u8 = if (needs_escape) blk: {
+        const safe_names: ?[]const []const u8 = if (unsafe) blk: {
             var safe = try alloc.alloc([]const u8, names.len);
             for (names, 0..) |n, i| {
                 const enc_len = try string.unescapedLength(n);
