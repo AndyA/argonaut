@@ -74,6 +74,14 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
     return o_pos;
 }
 
+pub fn unescapeAlloc(str: []const u8, alloc: std.mem.Allocator) ![]const u8 {
+    const out_len = try unescapedLength(str);
+    const out = try alloc.alloc(u8, out_len);
+    errdefer alloc.free(out);
+    _ = try unescapeToBuffer(str, out);
+    return out;
+}
+
 const TestCase = struct { in: []const u8, out: []const u8 };
 fn tc(in: []const u8, out: []const u8) TestCase {
     return .{ .in = in, .out = out };

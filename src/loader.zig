@@ -120,28 +120,28 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
                                     const size = str.len;
                                     const adj = if (info.sentinel_ptr == null) 0 else 1;
 
-                                    var arr: []u8 = undefined;
+                                    var out: []u8 = undefined;
 
                                     switch (node) {
                                         .string => {
-                                            const enc_len = try string.unescapedLength(str);
-                                            arr = try alloc.alloc(u8, enc_len + adj);
-                                            errdefer alloc.free(arr);
-                                            _ = try string.unescapeToBuffer(str, arr);
+                                            const out_len = try string.unescapedLength(str);
+                                            out = try alloc.alloc(u8, out_len + adj);
+                                            errdefer alloc.free(out);
+                                            _ = try string.unescapeToBuffer(str, out);
                                         },
                                         .safe_string => {
-                                            arr = try alloc.alloc(u8, size + adj);
-                                            @memcpy(arr[0..str.len], str);
+                                            out = try alloc.alloc(u8, size + adj);
+                                            @memcpy(out[0..str.len], str);
                                         },
                                         else => unreachable,
                                     }
 
                                     if (info.sentinel()) |s| {
-                                        arr.len -= 1;
-                                        arr[arr.len] = s;
+                                        out.len -= 1;
+                                        out[out.len] = s;
                                     }
 
-                                    return arr;
+                                    return out;
                                 },
                                 else => {
                                     return LoaderError.TypeMismatch;
@@ -239,11 +239,11 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
                 pub fn load(node: NT, alloc: Allocator) !T {
                     const tag = switch (node) {
                         .string => |str| blk: {
-                            const enc_len = try string.unescapedLength(str);
-                            const arr = try alloc.alloc(u8, enc_len);
-                            defer alloc.free(arr);
-                            _ = try string.unescapeToBuffer(str, arr);
-                            break :blk map.get(arr);
+                            // const out_len = try string.unescapedLength(str);
+                            const out = try string.unescapeAlloc(str, alloc);
+                            defer alloc.free(out);
+                            // _ = try string.unescapeToBuffer(str, out);
+                            break :blk map.get(out);
                         },
                         .safe_string => |str| map.get(str),
                         else => {

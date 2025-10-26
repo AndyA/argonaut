@@ -40,11 +40,9 @@ pub fn ObjectClass(comptime Context: type) type {
             const safe_names: ?[]const []const u8 = if (unsafe) blk: {
                 var safe = try alloc.alloc([]const u8, names.len);
                 for (names, 0..) |n, i| {
-                    const enc_len = try string.unescapedLength(n);
-                    const arr = try alloc.alloc(u8, enc_len);
-                    errdefer alloc.free(arr);
-                    _ = try string.unescapeToBuffer(n, arr);
-                    safe[i] = arr;
+                    const out = try string.unescapeAlloc(n, alloc);
+                    errdefer alloc.free(out);
+                    safe[i] = out;
                 }
                 break :blk safe;
             } else null;
