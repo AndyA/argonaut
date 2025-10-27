@@ -268,18 +268,16 @@ pub fn JSONParser(comptime Context: type) type {
         fn parseValue(self: *Self, depth: u32) Error!NodeType {
             try self.checkMore();
             const nc = self.state.peek();
-            const node: NodeType = switch (nc) {
-                'n' => try self.parseLiteral("null", .{ .null = {} }),
-                'f' => try self.parseLiteral("false", .{ .boolean = false }),
-                't' => try self.parseLiteral("true", .{ .boolean = true }),
-                '"' => try self.parseString(),
-                '-', '0'...'9' => try self.parseNumber(),
-                '[' => try self.parseArray(depth),
-                '{' => try self.parseObject(depth),
+            return switch (nc) {
+                'n' => self.parseLiteral("null", .{ .null = {} }),
+                'f' => self.parseLiteral("false", .{ .boolean = false }),
+                't' => self.parseLiteral("true", .{ .boolean = true }),
+                '"' => self.parseString(),
+                '-', '0'...'9' => self.parseNumber(),
+                '[' => self.parseArray(depth),
+                '{' => self.parseObject(depth),
                 else => return Error.SyntaxError,
             };
-
-            return node;
         }
 
         fn parseMultiNode(self: *Self, depth: u32) Error!NodeType {
