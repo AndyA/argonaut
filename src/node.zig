@@ -13,9 +13,9 @@ pub const Node = union(enum) {
 
     // The first element in an object's slice is its shadow class. This to minimise
     // the size of individual JSONNodes - most of which are the size of a slice.
-    class: *const sc.ObjectClass,
+    class: *const ObjectClass,
 
-    pub fn objectClass(self: Self) *const sc.ObjectClass {
+    pub fn objectClass(self: Self) *const ObjectClass {
         return switch (self) {
             .object => |o| blk: {
                 assert(o.len >= 1);
@@ -75,8 +75,9 @@ pub const Node = union(enum) {
 };
 
 test Node {
+    const ShadowClass = @import("./shadow.zig").ShadowClass;
     const alloc = std.testing.allocator;
-    var root = sc.ShadowClass{};
+    var root = ShadowClass{};
     defer root.deinit(alloc);
 
     var pi = try root.getNext(alloc, "pi");
@@ -114,5 +115,5 @@ test Node {
 
 const std = @import("std");
 const assert = std.debug.assert;
-const sc = @import("./shadow.zig");
+const ObjectClass = @import("./shadow.zig").ObjectClass;
 const string = @import("./string.zig");
