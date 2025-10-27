@@ -134,6 +134,7 @@ pub fn Loader(comptime T: type) type {
                                         },
                                         .safe_string, .wild_string => {
                                             out = try alloc.alloc(u8, size + adj);
+                                            errdefer alloc.free(out);
                                             @memcpy(out[0..str.len], str);
                                         },
                                         else => unreachable,
