@@ -317,7 +317,7 @@ pub const JSONParser = struct {
     const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
     const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
 
-    inline fn parseUsing(
+    fn parseUsing(
         self: *Self,
         src: []const u8,
         comptime parser: ParseDepthFn,
@@ -346,7 +346,7 @@ pub const JSONParser = struct {
         }
     }
 
-    inline fn parseWithAllocator(
+    fn parseWithAllocator(
         self: *Self,
         alloc: Allocator,
         src: []const u8,
