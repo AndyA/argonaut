@@ -15,6 +15,10 @@ pub const Node = union(enum) {
     // the size of individual JSONNodes - most of which are the size of a slice.
     class: *const ObjectClass,
 
+    comptime {
+        assert(@sizeOf(Self) <= @sizeOf([]const u8) + @sizeOf(usize));
+    }
+
     pub fn objectClass(self: Self) *const ObjectClass {
         return switch (self) {
             .object => |o| blk: {
