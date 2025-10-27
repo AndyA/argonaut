@@ -1,12 +1,3 @@
-pub fn isEscaped(str: []const u8) bool {
-    return std.mem.findScalar(u8, str, '\\') == null;
-}
-
-test isEscaped {
-    try std.testing.expect(isEscaped("Hello"));
-    try std.testing.expect(!isEscaped("\\\"Hello\\\""));
-}
-
 const Error = error{
     Overflow,
     InvalidCharacter,
