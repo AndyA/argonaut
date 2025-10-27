@@ -414,11 +414,6 @@ test Loader {
     }
 }
 
-test {
-    // const T = []u8;
-    // @compileLog(@typeInfo(T));
-}
-
 const std = @import("std");
 const assert = std.debug.assert;
 const StaticStringMap = std.static_string_map.StaticStringMap;
