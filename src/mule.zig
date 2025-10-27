@@ -43,11 +43,7 @@ const TechnicalMetadata = struct {
         @"riff/avi",
     },
     duration: ?u32,
-    ebuAudioLayout: ?enum {
-        EBU_R123_16c,
-        EBU_R123_4b,
-        EBU_R48_2a,
-    },
+    ebuAudioLayout: ?enum { EBU_R123_16c, EBU_R123_4b, EBU_R48_2a },
     editRate: ?struct {
         denominator: u32,
         numerator: u32,
@@ -65,22 +61,12 @@ const BytesObject = struct {
     },
     size: ?u64,
     technicalMetadata: ?TechnicalMetadata,
-    type: enum {
-        browse_audio,
-        browse_video,
-        primary_audio,
-        primary_subtitles,
-        primary_video,
-    },
+    type: enum { browse_audio, browse_video, primary_audio, primary_subtitles, primary_video },
 };
 
 const Change = struct {
     id: []const u8,
-    operation: enum {
-        insert,
-        update,
-        delete,
-    },
+    operation: enum { insert, update, delete },
     sequencer: u64,
     document: struct {
         bytesObject: BytesObject,
@@ -88,10 +74,7 @@ const Change = struct {
         source: struct {
             authority: []const u8,
             id: []const u8,
-            type: enum {
-                item,
-                package,
-            },
+            type: enum { item, package },
         },
         timestamp: []const u8,
     },
