@@ -79,8 +79,8 @@ pub fn unescapedLength(str: []const u8) !usize {
                 var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
                 i_pos += 4;
                 if (isSurrogateLow(cp))
-                    return Error.Utf8CannotEncodeSurrogateHalf;
-                if (isSurrogateHigh(cp)) {
+                    return Error.Utf8CannotEncodeSurrogateHalf
+                else if (isSurrogateHigh(cp)) {
                     if (i_pos <= str.len - 1 and str[i_pos] != '\\')
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
@@ -121,8 +121,8 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
                 var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
                 i_pos += 4;
                 if (isSurrogateLow(cp))
-                    return Error.Utf8CannotEncodeSurrogateHalf;
-                if (isSurrogateHigh(cp)) {
+                    return Error.Utf8CannotEncodeSurrogateHalf
+                else if (isSurrogateHigh(cp)) {
                     if (i_pos <= str.len - 1 and str[i_pos] != '\\')
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
