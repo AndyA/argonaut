@@ -20,7 +20,7 @@ pub fn ObjectClass(comptime Context: type) type {
 
         index_map: IndexMap = .empty,
         names: []const []const u8,
-        safe_names: ?[]const []const u8,
+        unescaped_names: ?[]const []const u8,
         context: Context,
 
         pub fn initFromShadow(alloc: Allocator, shadow: *const SC) !Self {
@@ -30,14 +30,14 @@ pub fn ObjectClass(comptime Context: type) type {
             errdefer alloc.free(names);
 
             var class = shadow;
-            var unsafe = false;
+            var escaped = false;
             while (class.size() > 0) : (class = class.parent.?) {
                 assert(class.index < size);
                 names[class.index] = class.name;
-                if (!string.isEscaped(class.name)) unsafe = true;
+                if (!string.isEscaped(class.name)) escaped = true;
             }
 
-            const safe_names: ?[]const []const u8 = if (unsafe) blk: {
+            const safe_names: ?[]const []const u8 = if (escaped) blk: {
                 var safe = try alloc.alloc([]const u8, names.len);
                 for (names, 0..) |n, i| {
                     const out = try string.unescapeAlloc(n, alloc);
@@ -50,7 +50,7 @@ pub fn ObjectClass(comptime Context: type) type {
             const self = Self{
                 .index_map = try indexMapForNames(alloc, safe_names orelse names),
                 .names = names,
-                .safe_names = safe_names,
+                .unescaped_names = safe_names,
                 .context = if (@typeInfo(Context) == .void) {} else Context{},
             };
 
@@ -64,7 +64,7 @@ pub fn ObjectClass(comptime Context: type) type {
             if (@typeInfo(Context) != .void and @hasDecl(Context, "deinit"))
                 self.context.deinit(alloc);
 
-            if (self.safe_names) |safe| {
+            if (self.unescaped_names) |safe| {
                 for (safe) |s| alloc.free(s);
                 alloc.free(safe);
             }
@@ -74,7 +74,7 @@ pub fn ObjectClass(comptime Context: type) type {
         }
 
         pub fn keys(self: Self) []const []const u8 {
-            return self.safe_names orelse self.names;
+            return self.unescaped_names orelse self.names;
         }
 
         pub fn get(self: Self, key: []const u8) ?u32 {
