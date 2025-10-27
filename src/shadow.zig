@@ -13,6 +13,11 @@ fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
     return index;
 }
 
+pub const ObjectClassSlot = struct {
+    name: []const u8,
+    index: u32,
+};
+
 pub fn ObjectClass(comptime Context: type) type {
     return struct {
         const Self = @This();
@@ -64,6 +69,32 @@ pub fn ObjectClass(comptime Context: type) type {
 
         pub fn get(self: Self, key: []const u8) ?u32 {
             return self.index_map.get(key);
+        }
+
+        const SlotIter = struct {
+            names: []const []const u8,
+            index: u32 = 0,
+
+            pub fn next(self: *@This()) ?ObjectClassSlot {
+                if (self.index == self.names.len) return null;
+                defer self.index += 1;
+                return .{
+                    .name = self.names[self.index],
+                    .index = self.index,
+                };
+            }
+        };
+
+        pub fn escapedIter(self: *const Self) SlotIter {
+            if (@typeInfo(Context) != .void and @hasDecl(Context, "escapedIter"))
+                return self.context.escapedIter();
+            return .{ .names = self.names };
+        }
+
+        pub fn iter(self: *const Self) SlotIter {
+            if (@typeInfo(Context) != .void and @hasDecl(Context, "iter"))
+                return self.context.iter();
+            return .{ .names = self.unescaped_names };
         }
     };
 }

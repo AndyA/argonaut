@@ -62,10 +62,13 @@ pub fn JSONNode(comptime Context: type) type {
                     const class = self.objectClass();
                     const items = self.objectSlice();
                     try w.print("{{", .{});
-                    for (class.names, 0..) |n, i| {
-                        try w.print("\"{s}\":", .{n});
-                        try items[i].format(w);
-                        if (i < items.len - 1) try w.print(",", .{});
+                    var iter = class.escapedIter();
+                    var comma = false;
+                    while (iter.next()) |slot| {
+                        if (comma) try w.print(",", .{});
+                        comma = true;
+                        try w.print("\"{s}\":", .{slot.name});
+                        try items[slot.index].format(w);
                     }
                     try w.print("}}", .{});
                 },
