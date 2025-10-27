@@ -20,7 +20,7 @@ pub fn ObjectClass(comptime Context: type) type {
 
         index_map: IndexMap = .empty,
         names: []const []const u8,
-        unescaped_names: ?[]const []const u8,
+        unescaped_names: []const []const u8,
         context: Context,
 
         pub fn initFromShadow(alloc: Allocator, shadow: *const SC) !Self {
@@ -28,29 +28,20 @@ pub fn ObjectClass(comptime Context: type) type {
 
             var names = try alloc.alloc([]const u8, size);
             errdefer alloc.free(names);
+            var unescaped_names = try alloc.alloc([]const u8, names.len);
+            errdefer alloc.free(unescaped_names);
 
             var class = shadow;
-            var escaped = false;
             while (class.size() > 0) : (class = class.parent.?) {
                 assert(class.index < size);
                 names[class.index] = class.name;
-                if (!string.isEscaped(class.name)) escaped = true;
+                unescaped_names[class.index] = try string.unescapeAlloc(class.name, alloc);
             }
 
-            const safe_names: ?[]const []const u8 = if (escaped) blk: {
-                var safe = try alloc.alloc([]const u8, names.len);
-                for (names, 0..) |n, i| {
-                    const out = try string.unescapeAlloc(n, alloc);
-                    errdefer alloc.free(out);
-                    safe[i] = out;
-                }
-                break :blk safe;
-            } else null;
-
             const self = Self{
-                .index_map = try indexMapForNames(alloc, safe_names orelse names),
+                .index_map = try indexMapForNames(alloc, unescaped_names),
                 .names = names,
-                .unescaped_names = safe_names,
+                .unescaped_names = unescaped_names,
                 .context = if (@typeInfo(Context) == .void) {} else Context{},
             };
 
@@ -64,17 +55,11 @@ pub fn ObjectClass(comptime Context: type) type {
             if (@typeInfo(Context) != .void and @hasDecl(Context, "deinit"))
                 self.context.deinit(alloc);
 
-            if (self.unescaped_names) |safe| {
-                for (safe) |s| alloc.free(s);
-                alloc.free(safe);
-            }
+            for (self.unescaped_names) |s| alloc.free(s);
+            alloc.free(self.unescaped_names);
             self.index_map.deinit(alloc);
             alloc.free(self.names);
             self.* = undefined;
-        }
-
-        pub fn keys(self: Self) []const []const u8 {
-            return self.unescaped_names orelse self.names;
         }
 
         pub fn get(self: Self, key: []const u8) ?u32 {
