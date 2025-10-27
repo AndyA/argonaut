@@ -50,7 +50,7 @@ pub fn isSurrogateLow(cp: u21) bool {
 pub fn decodeSurrogatePair(cp_high: u21, cp_low: u21) u21 {
     assert(isSurrogateHigh(cp_high));
     assert(isSurrogateLow(cp_low));
-    return ((cp_high & 0x03ff) << 10) + (cp_low & 0x3ff) + 0x10000;
+    return ((cp_high & 0x03ff) << 10) + (cp_low & 0x03ff) + 0x10000;
 }
 
 test decodeSurrogatePair {
