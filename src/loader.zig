@@ -197,7 +197,10 @@ pub fn Loader(comptime T: type) type {
                                 } else if (@typeInfo(field.type) == .optional) {
                                     @field(obj, field.name) = null;
                                 } else {
-                                    std.debug.print("Missing field {s} in {f}\n", .{ field.name, node });
+                                    std.debug.print(
+                                        "Missing field {s} in {f}\n",
+                                        .{ field.name, node },
+                                    );
                                     return LoaderError.MissingField;
                                 }
                             }
