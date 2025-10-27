@@ -12,7 +12,7 @@ const ErrorOOM = Error || OOM;
 
 fn nextEscape(str: []const u8) usize {
     for (str, 0..) |c, i|
-        if (c < 0x20 or c == 0x7f or c == '\\') return i;
+        if (c < 0x20 or c == 0x7f or c == '\\' or c == '\"') return i;
     return str.len;
 }
 
