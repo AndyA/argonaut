@@ -74,6 +74,7 @@ pub fn unescapedLength(str: []const u8) !usize {
             const ec = str[i_pos];
             i_pos += 1;
             if (ec == 'u') {
+                @branchHint(.unlikely);
                 if (i_pos > str.len - 4)
                     return Error.BadUnicodeEscape;
                 var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
@@ -116,6 +117,7 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
             const ec = str[i_pos];
             i_pos += 1;
             if (ec == 'u') {
+                @branchHint(.unlikely);
                 if (i_pos > str.len - 4)
                     return Error.BadUnicodeEscape;
                 var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
