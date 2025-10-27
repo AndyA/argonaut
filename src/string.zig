@@ -7,7 +7,33 @@ test isEscaped {
     try std.testing.expect(!isEscaped("\\\"Hello\\\""));
 }
 
-const Error = error{BadUnicodeEscape};
+const Error = error{
+    Overflow,
+    InvalidCharacter,
+    BadUnicodeEscape,
+    CodepointTooLarge,
+    Utf8CannotEncodeSurrogateHalf,
+};
+
+pub fn isSurrogateHigh(cp: u21) bool {
+    return cp >= 0xd800 and cp < 0xdc00;
+}
+
+pub fn isSurrogateLow(cp: u21) bool {
+    return cp >= 0xdc00 and cp < 0xe000;
+}
+
+pub fn decodeSurrogatePair(cp_high: u21, cp_low: u21) u21 {
+    assert(isSurrogateHigh(cp_high));
+    assert(isSurrogateLow(cp_low));
+    return ((cp_high & 0x03ff) << 10) + (cp_low & 0x3ff) + 0x10000;
+}
+
+test decodeSurrogatePair {
+    try std.testing.expectEqual(0x10000, decodeSurrogatePair(0xd800, 0xdc00));
+    try std.testing.expectEqual(0x1f603, decodeSurrogatePair(0xd83d, 0xde03));
+    try std.testing.expectEqual(0x10ffff, decodeSurrogatePair(0xdbff, 0xdfff));
+}
 
 pub fn unescapedLength(str: []const u8) !usize {
     var i_pos: usize = 0;
@@ -22,8 +48,23 @@ pub fn unescapedLength(str: []const u8) !usize {
             if (ec == 'u') {
                 if (i_pos > str.len - 4)
                     return Error.BadUnicodeEscape;
-                const cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
+                var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
                 i_pos += 4;
+                if (isSurrogateLow(cp))
+                    return Error.Utf8CannotEncodeSurrogateHalf;
+                if (isSurrogateHigh(cp)) {
+                    if (i_pos <= str.len - 1 and str[i_pos] != '\\')
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    if (i_pos > str.len - 6)
+                        return Error.BadUnicodeEscape;
+                    const cp_low = try std.fmt.parseInt(u21, str[i_pos + 2 .. i_pos + 6], 16);
+                    i_pos += 6;
+                    if (!isSurrogateLow((cp_low)))
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    cp = decodeSurrogatePair(cp, cp_low);
+                }
                 o_len += try std.unicode.utf8CodepointSequenceLength(cp);
             } else {
                 o_len += 1;
@@ -48,8 +89,23 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
             if (ec == 'u') {
                 if (i_pos > str.len - 4)
                     return Error.BadUnicodeEscape;
-                const cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
+                var cp = try std.fmt.parseInt(u21, str[i_pos .. i_pos + 4], 16);
                 i_pos += 4;
+                if (isSurrogateLow(cp))
+                    return Error.Utf8CannotEncodeSurrogateHalf;
+                if (isSurrogateHigh(cp)) {
+                    if (i_pos <= str.len - 1 and str[i_pos] != '\\')
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    if (i_pos > str.len - 6)
+                        return Error.BadUnicodeEscape;
+                    const cp_low = try std.fmt.parseInt(u21, str[i_pos + 2 .. i_pos + 6], 16);
+                    i_pos += 6;
+                    if (!isSurrogateLow((cp_low)))
+                        return Error.Utf8CannotEncodeSurrogateHalf;
+                    cp = decodeSurrogatePair(cp, cp_low);
+                }
                 o_pos += try std.unicode.utf8Encode(cp, buf[o_pos..]);
             } else {
                 const rc = switch (ec) {
@@ -95,11 +151,13 @@ test unescapeToBuffer {
         tc("\\\"Hello\\\"", "\"Hello\""),
         tc("\\uffe9", "\u{ffe9}"),
         tc("Hello\\uffe9now", "Hello\u{ffe9}now"),
+        tc("\\udbff\\udfff", "\u{10ffff}"),
     };
 
     for (cases) |case| {
-        var buf: [100]u8 = undefined;
+        var buf: [100]u8 = @splat(0);
         const len = try unescapeToBuffer(case.in, &buf);
+
         try std.testing.expectEqual(len, unescapedLength(case.in));
         try std.testing.expectEqualDeep(case.out, buf[0..len]);
     }
