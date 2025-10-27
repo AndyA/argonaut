@@ -54,8 +54,8 @@ pub fn decodeSurrogatePair(cp_high: u21, cp_low: u21) u21 {
 }
 
 test decodeSurrogatePair {
-    try std.testing.expectEqual(0x10000, decodeSurrogatePair(0xd800, 0xdc00));
-    try std.testing.expectEqual(0x1f603, decodeSurrogatePair(0xd83d, 0xde03));
+    try std.testing.expectEqual(0x010000, decodeSurrogatePair(0xd800, 0xdc00));
+    try std.testing.expectEqual(0x01f603, decodeSurrogatePair(0xd83d, 0xde03));
     try std.testing.expectEqual(0x10ffff, decodeSurrogatePair(0xdbff, 0xdfff));
 }
 
