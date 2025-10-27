@@ -181,12 +181,9 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
 
                 pub fn load(node: NT, alloc: Allocator) !T {
                     switch (node) {
-                        .object => |o| {
-                            assert(o.len >= 1);
-                            assert(o[0] == .class);
-                            const class = o[0].class;
-                            assert(o.len == class.names.len + 1);
-                            const values = o[1..];
+                        .object => {
+                            const class = node.objectClass();
+                            const values = node.objectSlice();
                             var obj: T = undefined;
                             inline for (info.fields, 0..) |field, i| {
                                 if (class.get(field.name)) |idx| {

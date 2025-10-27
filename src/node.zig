@@ -1,6 +1,7 @@
 pub fn JSONNode(comptime Context: type) type {
     return union(enum) {
         const Self = @This();
+        const OC = sc.ObjectClass(Context);
 
         null,
         boolean: bool,
@@ -13,7 +14,29 @@ pub fn JSONNode(comptime Context: type) type {
 
         // The first element in an object's slice is its shadow class. This to minimise
         // the size of individual JSONNodes - most of which are the size of a slice.
-        class: *const sc.ObjectClass(Context),
+        class: *const OC,
+
+        pub fn objectClass(self: Self) *const OC {
+            return switch (self) {
+                .object => |o| blk: {
+                    assert(o.len >= 1);
+                    const class = o[0].class;
+                    assert(o.len == class.names.len + 1);
+                    break :blk class;
+                },
+                else => unreachable,
+            };
+        }
+
+        pub fn objectSlice(self: Self) []const Self {
+            return switch (self) {
+                .object => |o| blk: {
+                    assert(o.len >= 1);
+                    break :blk o[1..];
+                },
+                else => unreachable,
+            };
+        }
 
         pub fn format(self: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
             switch (self) {
@@ -35,15 +58,14 @@ pub fn JSONNode(comptime Context: type) type {
                     }
                     try w.print("]", .{});
                 },
-                .object => |o| {
-                    assert(o.len >= 1);
-                    const class = o[0].class;
-                    assert(o.len == class.names.len + 1);
+                .object => {
+                    const class = self.objectClass();
+                    const items = self.objectSlice();
                     try w.print("{{", .{});
-                    for (class.names, 1..) |n, i| {
+                    for (class.names, 0..) |n, i| {
                         try w.print("\"{s}\":", .{n});
-                        try o[i].format(w);
-                        if (i < o.len - 1) try w.print(",", .{});
+                        try items[i].format(w);
+                        if (i < items.len - 1) try w.print(",", .{});
                     }
                     try w.print("}}", .{});
                 },
