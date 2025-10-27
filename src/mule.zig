@@ -23,53 +23,49 @@ pub fn main() !void {
     // }
 }
 
-const TechnicalMetadata = struct {
-    audioChannelCount: ?u32,
-    bbcAspectRatio: ?enum {
-        @"16F16A",
-        @"12F12C",
-        @"16F16C",
-        @"14P16B",
-        @"12P16C",
-        @"16P12",
-        @"16F16B",
-    },
-    containerFormat: ?enum {
-        @"mpeg/ps",
-        @"riff/wave",
-        @"qt/cont",
-        @"mxf/opatom",
-        @"mxf/op1a",
-        @"riff/avi",
-    },
-    duration: ?u32,
-    ebuAudioLayout: ?enum { EBU_R123_16c, EBU_R123_4b, EBU_R48_2a },
-    editRate: ?struct {
-        denominator: u32,
-        numerator: u32,
-    },
-    formatDescription: ?[]const u8,
-    md5Hash: ?[]const u8,
-    startTimecodeEditUnits: ?u32,
-};
-
-const BytesObject = struct {
-    locator: ?struct {
-        resource: []const u8,
-        type: []const u8,
-        scope: ?[]const u8,
-    },
-    size: ?u64,
-    technicalMetadata: ?TechnicalMetadata,
-    type: enum { browse_audio, browse_video, primary_audio, primary_subtitles, primary_video },
-};
-
 const Change = struct {
     id: []const u8,
     operation: enum { insert, update, delete },
     sequencer: u64,
     document: struct {
-        bytesObject: BytesObject,
+        bytesObject: struct {
+            locator: ?struct {
+                resource: []const u8,
+                type: []const u8,
+                scope: ?[]const u8,
+            },
+            size: ?u64,
+            technicalMetadata: ?struct {
+                audioChannelCount: ?u32,
+                bbcAspectRatio: ?enum {
+                    @"16F16A",
+                    @"12F12C",
+                    @"16F16C",
+                    @"14P16B",
+                    @"12P16C",
+                    @"16P12",
+                    @"16F16B",
+                },
+                containerFormat: ?enum {
+                    @"mpeg/ps",
+                    @"riff/wave",
+                    @"qt/cont",
+                    @"mxf/opatom",
+                    @"mxf/op1a",
+                    @"riff/avi",
+                },
+                duration: ?u32,
+                ebuAudioLayout: ?enum { EBU_R123_16c, EBU_R123_4b, EBU_R48_2a },
+                editRate: ?struct {
+                    denominator: u32,
+                    numerator: u32,
+                },
+                formatDescription: ?[]const u8,
+                md5Hash: ?[]const u8,
+                startTimecodeEditUnits: ?u32,
+            },
+            type: enum { browse_audio, browse_video, primary_audio, primary_subtitles, primary_video },
+        },
         deleted: bool = false,
         source: struct {
             authority: []const u8,
