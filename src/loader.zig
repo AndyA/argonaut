@@ -129,8 +129,7 @@ pub fn Loader(comptime T: type) type {
                                         .json_string => {
                                             const out_len = try string.unescapedLength(str);
                                             out = try alloc.alloc(u8, out_len + adj);
-                                            errdefer alloc.free(out);
-                                            _ = try string.unescapeToBuffer(str, out);
+                                            _ = string.unescapeToBuffer(str, out) catch unreachable;
                                         },
                                         .safe_string, .wild_string => {
                                             out = try alloc.alloc(u8, size + adj);
