@@ -64,7 +64,13 @@ const Change = struct {
                 md5Hash: ?[]const u8,
                 startTimecodeEditUnits: ?u32,
             },
-            type: enum { browse_audio, browse_video, primary_audio, primary_subtitles, primary_video },
+            type: enum {
+                browse_audio,
+                browse_video,
+                primary_audio,
+                primary_subtitles,
+                primary_video,
+            },
         },
         deleted: bool = false,
         source: struct {
