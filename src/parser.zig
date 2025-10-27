@@ -1,393 +1,390 @@
-pub fn JSONParser(comptime Context: type) type {
-    return struct {
-        const Self = @This();
-        pub const NodeType = JSONNode(Context);
-        pub const NodeList = std.ArrayListUnmanaged(NodeType);
-        const Allocator = std.mem.Allocator;
+pub const JSONParser = struct {
+    const Self = @This();
+    pub const NodeList = std.ArrayListUnmanaged(JSONNode);
+    const Allocator = std.mem.Allocator;
 
-        pub const Error = error{
-            UnexpectedEndOfInput,
-            SyntaxError,
-            BadToken,
-            MissingString,
-            MissingKey,
-            MissingQuotes,
-            MissingComma,
-            MissingColon,
-            MissingDigits,
-            JunkAfterInput,
-            OutOfMemory,
-            RestartParser,
-            Overflow,
-            InvalidCharacter,
-            BadUnicodeEscape,
-            CodepointTooLarge,
-            Utf8CannotEncodeSurrogateHalf,
+    pub const Error = error{
+        UnexpectedEndOfInput,
+        SyntaxError,
+        BadToken,
+        MissingString,
+        MissingKey,
+        MissingQuotes,
+        MissingComma,
+        MissingColon,
+        MissingDigits,
+        JunkAfterInput,
+        OutOfMemory,
+        RestartParser,
+        Overflow,
+        InvalidCharacter,
+        BadUnicodeEscape,
+        CodepointTooLarge,
+        Utf8CannotEncodeSurrogateHalf,
+    };
+
+    work_alloc: Allocator,
+    assembly_alloc: Allocator,
+    shadow_root: sc.ShadowClass = .{},
+    state: ParserState = .{},
+    parsing: bool = false,
+    assembly: NodeList = .empty,
+    assembly_capacity: usize = 8192,
+    scratch: std.ArrayListUnmanaged(NodeList) = .empty,
+
+    pub fn init(work_alloc: Allocator) !Self {
+        return Self.initCustom(work_alloc, work_alloc);
+    }
+
+    pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) !Self {
+        return Self{
+            .work_alloc = work_alloc,
+            .assembly_alloc = assembly_alloc,
         };
+    }
 
-        work_alloc: Allocator,
-        assembly_alloc: Allocator,
-        shadow_root: sc.ShadowClass(Context) = .{},
-        state: ParserState = .{},
-        parsing: bool = false,
-        assembly: NodeList = .empty,
-        assembly_capacity: usize = 8192,
-        scratch: std.ArrayListUnmanaged(NodeList) = .empty,
-
-        pub fn init(work_alloc: Allocator) !Self {
-            return Self.initCustom(work_alloc, work_alloc);
+    pub fn deinit(self: *Self) void {
+        for (self.scratch.items) |*s| {
+            s.deinit(self.work_alloc);
         }
+        self.scratch.deinit(self.work_alloc);
+        self.shadow_root.deinit(self.work_alloc);
+        self.assembly.deinit(self.assembly_alloc);
+        self.* = undefined;
+    }
 
-        pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) !Self {
-            return Self{
-                .work_alloc = work_alloc,
-                .assembly_alloc = assembly_alloc,
-            };
+    pub fn setAssemblyAllocator(self: *Self, alloc: Allocator) void {
+        self.assembly.deinit(self.assembly_alloc);
+        self.assembly = .empty;
+        self.assembly_alloc = alloc;
+    }
+
+    pub fn takeAssembly(self: *Self) Error!NodeList {
+        defer self.assembly = .empty;
+        return self.assembly;
+    }
+
+    fn checkEof(self: *const Self) Error!void {
+        if (self.state.eof()) {
+            @branchHint(.unlikely);
+            return Error.UnexpectedEndOfInput;
         }
+    }
 
-        pub fn deinit(self: *Self) void {
-            for (self.scratch.items) |*s| {
-                s.deinit(self.work_alloc);
+    fn checkMore(self: *Self) Error!void {
+        self.state.skipSpace();
+        try self.checkEof();
+    }
+
+    fn checkDigits(self: *Self) Error!void {
+        const start = self.state.pos;
+        self.state.skipDigits();
+        if (self.state.pos == start) return Error.MissingDigits;
+    }
+
+    fn getScratch(self: *Self, depth: u32) Error!*NodeList {
+        while (self.scratch.items.len <= depth) {
+            try self.scratch.append(self.work_alloc, .empty);
+        }
+        var scratch = &self.scratch.items[depth];
+        scratch.items.len = 0;
+        return scratch;
+    }
+
+    fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
+        const start = self.assembly.items.len;
+        const needed = self.assembly.items.len + nodes.len;
+        if (self.assembly.capacity < needed) {
+            const old_ptr = self.assembly.items.ptr;
+            try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
+
+            // Track the maximum capacity so that if we give our assembly away we can
+            // pre-size the replacement appropriately.
+            self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
+
+            // If the assembly buffer has moved, restart the parser to correct pointers
+            // into the buffer. This will tend to stop happening once the buffer has
+            // grown large enough.
+            if (self.assembly.items.ptr != old_ptr) {
+                return Error.RestartParser;
             }
-            self.scratch.deinit(self.work_alloc);
-            self.shadow_root.deinit(self.work_alloc);
-            self.assembly.deinit(self.assembly_alloc);
-            self.* = undefined;
         }
 
-        pub fn setAssemblyAllocator(self: *Self, alloc: Allocator) void {
-            self.assembly.deinit(self.assembly_alloc);
-            self.assembly = .empty;
-            self.assembly_alloc = alloc;
-        }
+        self.assembly.appendSliceAssumeCapacity(nodes);
 
-        pub fn takeAssembly(self: *Self) Error!NodeList {
-            defer self.assembly = .empty;
-            return self.assembly;
-        }
+        return self.assembly.items[start..];
+    }
 
-        fn checkEof(self: *const Self) Error!void {
+    fn parseLiteral(
+        self: *Self,
+        comptime lit: []const u8,
+        comptime node: JSONNode,
+    ) Error!JSONNode {
+        if (!self.state.checkLiteral(lit)) {
+            @branchHint(.unlikely);
+            return Error.BadToken;
+        }
+        return node;
+    }
+
+    fn parseString(self: *Self) Error!JSONNode {
+        var safe = true;
+        _ = self.state.next();
+        self.state.setMark();
+        while (true) {
             if (self.state.eof()) {
                 @branchHint(.unlikely);
-                return Error.UnexpectedEndOfInput;
+                return Error.MissingQuotes;
+            }
+            const nc = self.state.next();
+            if (nc == '\"') {
+                @branchHint(.unlikely);
+                break;
+            }
+            if (nc == '\\') {
+                @branchHint(.unlikely);
+                try self.checkEof();
+                _ = self.state.next();
+                safe = false;
             }
         }
+        const marked = self.state.takeMarked();
+        const body = marked[0 .. marked.len - 1];
 
-        fn checkMore(self: *Self) Error!void {
-            self.state.skipSpace();
+        return if (safe) .{ .safe_string = body } else .{ .string = body };
+    }
+
+    fn parseKey(self: *Self) Error![]const u8 {
+        if (self.state.peek() != '"')
+            return Error.MissingKey;
+        const node = try self.parseString();
+        return switch (node) {
+            .safe_string, .string => |s| s,
+            else => unreachable,
+        };
+    }
+
+    fn parseNumber(self: *Self) Error!JSONNode {
+        self.state.setMark();
+        const nc = self.state.peek();
+        if (nc == '-') {
+            _ = self.state.next();
             try self.checkEof();
         }
-
-        fn checkDigits(self: *Self) Error!void {
-            const start = self.state.pos;
-            self.state.skipDigits();
-            if (self.state.pos == start) return Error.MissingDigits;
-        }
-
-        fn getScratch(self: *Self, depth: u32) Error!*NodeList {
-            while (self.scratch.items.len <= depth) {
-                try self.scratch.append(self.work_alloc, .empty);
-            }
-            var scratch = &self.scratch.items[depth];
-            scratch.items.len = 0;
-            return scratch;
-        }
-
-        fn appendToAssembly(self: *Self, nodes: []const NodeType) Error![]const NodeType {
-            const start = self.assembly.items.len;
-            const needed = self.assembly.items.len + nodes.len;
-            if (self.assembly.capacity < needed) {
-                const old_ptr = self.assembly.items.ptr;
-                try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
-
-                // Track the maximum capacity so that if we give our assembly away we can
-                // pre-size the replacement appropriately.
-                self.assembly_capacity = @max(self.assembly_capacity, self.assembly.capacity);
-
-                // If the assembly buffer has moved, restart the parser to correct pointers
-                // into the buffer. This will tend to stop happening once the buffer has
-                // grown large enough.
-                if (self.assembly.items.ptr != old_ptr) {
-                    return Error.RestartParser;
-                }
-            }
-
-            self.assembly.appendSliceAssumeCapacity(nodes);
-
-            return self.assembly.items[start..];
-        }
-
-        fn parseLiteral(
-            self: *Self,
-            comptime lit: []const u8,
-            comptime node: NodeType,
-        ) Error!NodeType {
-            if (!self.state.checkLiteral(lit)) {
-                @branchHint(.unlikely);
-                return Error.BadToken;
-            }
-            return node;
-        }
-
-        fn parseString(self: *Self) Error!NodeType {
-            var safe = true;
+        try self.checkDigits();
+        if (!self.state.eof() and self.state.peek() == '.') {
             _ = self.state.next();
-            self.state.setMark();
-            while (true) {
-                if (self.state.eof()) {
-                    @branchHint(.unlikely);
-                    return Error.MissingQuotes;
-                }
-                const nc = self.state.next();
-                if (nc == '\"') {
-                    @branchHint(.unlikely);
-                    break;
-                }
-                if (nc == '\\') {
-                    @branchHint(.unlikely);
-                    try self.checkEof();
-                    _ = self.state.next();
-                    safe = false;
-                }
-            }
-            const marked = self.state.takeMarked();
-            const body = marked[0 .. marked.len - 1];
-
-            return if (safe) .{ .safe_string = body } else .{ .string = body };
+            try self.checkDigits();
         }
-
-        fn parseKey(self: *Self) Error![]const u8 {
-            if (self.state.peek() != '"')
-                return Error.MissingKey;
-            const node = try self.parseString();
-            return switch (node) {
-                .safe_string, .string => |s| s,
-                else => unreachable,
-            };
-        }
-
-        fn parseNumber(self: *Self) Error!NodeType {
-            self.state.setMark();
-            const nc = self.state.peek();
-            if (nc == '-') {
+        if (!self.state.eof()) {
+            @branchHint(.likely);
+            const exp = self.state.peek();
+            if (exp == 'E' or exp == 'e') {
+                @branchHint(.unlikely);
                 _ = self.state.next();
                 try self.checkEof();
-            }
-            try self.checkDigits();
-            if (!self.state.eof() and self.state.peek() == '.') {
-                _ = self.state.next();
+                const sgn = self.state.peek();
+                if (sgn == '+' or sgn == '-') {
+                    @branchHint(.likely);
+                    _ = self.state.next();
+                }
                 try self.checkDigits();
             }
-            if (!self.state.eof()) {
-                @branchHint(.likely);
-                const exp = self.state.peek();
-                if (exp == 'E' or exp == 'e') {
-                    @branchHint(.unlikely);
-                    _ = self.state.next();
-                    try self.checkEof();
-                    const sgn = self.state.peek();
-                    if (sgn == '+' or sgn == '-') {
-                        @branchHint(.likely);
-                        _ = self.state.next();
-                    }
-                    try self.checkDigits();
-                }
-            }
-            return .{ .number = self.state.takeMarked() };
         }
+        return .{ .number = self.state.takeMarked() };
+    }
 
-        fn parseArray(self: *Self, depth: u32) Error!NodeType {
+    fn parseArray(self: *Self, depth: u32) Error!JSONNode {
+        _ = self.state.next();
+        try self.checkMore();
+        var scratch = try self.getScratch(depth);
+        // Empty array is a special case
+        if (self.state.peek() == ']') {
             _ = self.state.next();
-            try self.checkMore();
-            var scratch = try self.getScratch(depth);
-            // Empty array is a special case
-            if (self.state.peek() == ']') {
-                _ = self.state.next();
-            } else {
-                while (true) {
-                    const node = try self.parseValue(depth + 1);
-                    try scratch.append(self.work_alloc, node);
-                    try self.checkMore();
-                    const nc = self.state.next();
-                    if (nc == ']') {
-                        break;
-                    }
-                    if (nc != ',') {
-                        @branchHint(.unlikely);
-                        return Error.MissingComma;
-                    }
-                    try self.checkMore();
-                }
-            }
-
-            const items = try self.appendToAssembly(scratch.items);
-            return .{ .array = items };
-        }
-
-        fn parseObject(self: *Self, depth: u32) Error!NodeType {
-            _ = self.state.next();
-            try self.checkMore();
-
-            var scratch = try self.getScratch(depth);
-            // Make a space for the class
-            try scratch.append(self.work_alloc, .{ .null = {} });
-            var shadow = self.shadow_root.startWalk();
-
-            // Empty object is a special case
-            if (self.state.peek() == '}') {
-                _ = self.state.next();
-            } else {
-                while (true) {
-                    const key = try self.parseKey();
-                    shadow = try shadow.getNext(self.work_alloc, key);
-                    try self.checkMore();
-                    if (self.state.next() != ':')
-                        return Error.MissingColon;
-
-                    const node = try self.parseValue(depth + 1);
-                    try scratch.append(self.work_alloc, node);
-                    try self.checkMore();
-                    const nc = self.state.next();
-                    if (nc == '}') break;
-                    if (nc != ',') {
-                        @branchHint(.unlikely);
-                        return Error.MissingComma;
-                    }
-                    try self.checkMore();
-                }
-            }
-
-            // Plug the class in
-            const class = try shadow.getClass(self.work_alloc);
-            scratch.items[0] = .{ .class = class };
-
-            const items = try self.appendToAssembly(scratch.items);
-            return .{ .object = items };
-        }
-
-        fn parseValue(self: *Self, depth: u32) Error!NodeType {
-            try self.checkMore();
-            const nc = self.state.peek();
-            return switch (nc) {
-                'n' => self.parseLiteral("null", .{ .null = {} }),
-                'f' => self.parseLiteral("false", .{ .boolean = false }),
-                't' => self.parseLiteral("true", .{ .boolean = true }),
-                '"' => self.parseString(),
-                '-', '0'...'9' => self.parseNumber(),
-                '[' => self.parseArray(depth),
-                '{' => self.parseObject(depth),
-                else => return Error.SyntaxError,
-            };
-        }
-
-        fn parseMultiNode(self: *Self, depth: u32) Error!NodeType {
-            var scratch = try self.getScratch(depth);
+        } else {
             while (true) {
-                self.state.skipSpace();
-                if (self.state.eof()) break;
-                if (self.state.peek() == ',') {
-                    _ = self.state.next();
-                    self.state.skipSpace();
-                    if (self.state.eof()) break;
-                }
                 const node = try self.parseValue(depth + 1);
                 try scratch.append(self.work_alloc, node);
+                try self.checkMore();
+                const nc = self.state.next();
+                if (nc == ']') {
+                    break;
+                }
+                if (nc != ',') {
+                    @branchHint(.unlikely);
+                    return Error.MissingComma;
+                }
+                try self.checkMore();
             }
-
-            const items = try self.appendToAssembly(scratch.items);
-            return .{ .multi = items };
         }
 
-        fn startParsing(self: *Self, src: []const u8) void {
-            assert(!self.parsing);
-            self.state = ParserState{ .src = src };
-            self.assembly.items.len = 0;
-            self.parsing = true;
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .array = items };
+    }
+
+    fn parseObject(self: *Self, depth: u32) Error!JSONNode {
+        _ = self.state.next();
+        try self.checkMore();
+
+        var scratch = try self.getScratch(depth);
+        // Make a space for the class
+        try scratch.append(self.work_alloc, .{ .null = {} });
+        var shadow = self.shadow_root.startWalk();
+
+        // Empty object is a special case
+        if (self.state.peek() == '}') {
+            _ = self.state.next();
+        } else {
+            while (true) {
+                const key = try self.parseKey();
+                shadow = try shadow.getNext(self.work_alloc, key);
+                try self.checkMore();
+                if (self.state.next() != ':')
+                    return Error.MissingColon;
+
+                const node = try self.parseValue(depth + 1);
+                try scratch.append(self.work_alloc, node);
+                try self.checkMore();
+                const nc = self.state.next();
+                if (nc == '}') break;
+                if (nc != ',') {
+                    @branchHint(.unlikely);
+                    return Error.MissingComma;
+                }
+                try self.checkMore();
+            }
         }
 
-        fn stopParsing(self: *Self) void {
-            assert(self.parsing);
-            self.parsing = false;
-        }
+        // Plug the class in
+        const class = try shadow.getClass(self.work_alloc);
+        scratch.items[0] = .{ .class = class };
 
-        fn checkForJunk(self: *Self) Error!void {
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .object = items };
+    }
+
+    fn parseValue(self: *Self, depth: u32) Error!JSONNode {
+        try self.checkMore();
+        const nc = self.state.peek();
+        return switch (nc) {
+            'n' => self.parseLiteral("null", .{ .null = {} }),
+            'f' => self.parseLiteral("false", .{ .boolean = false }),
+            't' => self.parseLiteral("true", .{ .boolean = true }),
+            '"' => self.parseString(),
+            '-', '0'...'9' => self.parseNumber(),
+            '[' => self.parseArray(depth),
+            '{' => self.parseObject(depth),
+            else => return Error.SyntaxError,
+        };
+    }
+
+    fn parseMultiNode(self: *Self, depth: u32) Error!JSONNode {
+        var scratch = try self.getScratch(depth);
+        while (true) {
             self.state.skipSpace();
-            if (!self.state.eof())
-                return Error.JunkAfterInput;
-        }
-
-        const ParseFn = fn (self: *Self, src: []const u8) Error!NodeType;
-        const ParseDepthFn = fn (self: *Self, depth: u32) Error!NodeType;
-
-        inline fn parseUsing(
-            self: *Self,
-            src: []const u8,
-            comptime parser: ParseDepthFn,
-        ) Error!NodeType {
-            try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
-
-            RESTART: while (true) {
-                self.startParsing(src);
-                defer self.stopParsing();
-
-                // A space for the root object
-                try self.assembly.append(self.assembly_alloc, .{ .null = {} });
-
-                const node = parser(self, 0) catch |err| {
-                    switch (err) {
-                        Error.RestartParser => continue :RESTART,
-                        else => return err,
-                    }
-                };
-
-                try self.checkForJunk();
-
-                // Make the root the first item of the assembly
-                self.assembly.items[0] = node;
-                return node;
+            if (self.state.eof()) break;
+            if (self.state.peek() == ',') {
+                _ = self.state.next();
+                self.state.skipSpace();
+                if (self.state.eof()) break;
             }
+            const node = try self.parseValue(depth + 1);
+            try scratch.append(self.work_alloc, node);
         }
 
-        inline fn parseWithAllocator(
-            self: *Self,
-            alloc: Allocator,
-            src: []const u8,
-            comptime parser: ParseFn,
-        ) Error!NodeList {
-            const old_assembly = self.assembly;
-            const old_alloc = self.assembly_alloc;
-            defer {
-                self.assembly = old_assembly;
-                self.assembly_alloc = old_alloc;
-            }
-            self.assembly = .empty;
-            self.assembly_alloc = alloc;
-            errdefer self.assembly.deinit(alloc);
-            _ = try parser(self, src);
-            return self.takeAssembly();
-        }
+        const items = try self.appendToAssembly(scratch.items);
+        return .{ .multi = items };
+    }
 
-        pub fn parse(self: *Self, src: []const u8) Error!NodeType {
-            return self.parseUsing(src, parseValue);
-        }
+    fn startParsing(self: *Self, src: []const u8) void {
+        assert(!self.parsing);
+        self.state = ParserState{ .src = src };
+        self.assembly.items.len = 0;
+        self.parsing = true;
+    }
 
-        pub fn parseMulti(self: *Self, src: []const u8) Error!NodeType {
-            return self.parseUsing(src, parseMultiNode);
-        }
+    fn stopParsing(self: *Self) void {
+        assert(self.parsing);
+        self.parsing = false;
+    }
 
-        pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-            return self.parseWithAllocator(alloc, src, parse);
-        }
+    fn checkForJunk(self: *Self) Error!void {
+        self.state.skipSpace();
+        if (!self.state.eof())
+            return Error.JunkAfterInput;
+    }
 
-        pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
-            return self.parseWithAllocator(alloc, src, parseMulti);
+    const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
+    const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
+
+    inline fn parseUsing(
+        self: *Self,
+        src: []const u8,
+        comptime parser: ParseDepthFn,
+    ) Error!JSONNode {
+        try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
+
+        RESTART: while (true) {
+            self.startParsing(src);
+            defer self.stopParsing();
+
+            // A space for the root object
+            try self.assembly.append(self.assembly_alloc, .{ .null = {} });
+
+            const node = parser(self, 0) catch |err| {
+                switch (err) {
+                    Error.RestartParser => continue :RESTART,
+                    else => return err,
+                }
+            };
+
+            try self.checkForJunk();
+
+            // Make the root the first item of the assembly
+            self.assembly.items[0] = node;
+            return node;
         }
-    };
-}
+    }
+
+    inline fn parseWithAllocator(
+        self: *Self,
+        alloc: Allocator,
+        src: []const u8,
+        comptime parser: ParseFn,
+    ) Error!NodeList {
+        const old_assembly = self.assembly;
+        const old_alloc = self.assembly_alloc;
+        defer {
+            self.assembly = old_assembly;
+            self.assembly_alloc = old_alloc;
+        }
+        self.assembly = .empty;
+        self.assembly_alloc = alloc;
+        errdefer self.assembly.deinit(alloc);
+        _ = try parser(self, src);
+        return self.takeAssembly();
+    }
+
+    pub fn parse(self: *Self, src: []const u8) Error!JSONNode {
+        return self.parseUsing(src, parseValue);
+    }
+
+    pub fn parseMulti(self: *Self, src: []const u8) Error!JSONNode {
+        return self.parseUsing(src, parseMultiNode);
+    }
+
+    pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+        return self.parseWithAllocator(alloc, src, parse);
+    }
+
+    pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+        return self.parseWithAllocator(alloc, src, parseMulti);
+    }
+};
 
 test JSONParser {
     const alloc = std.testing.allocator;
-    var p = try JSONParser(void).init(alloc);
+    var p = try JSONParser.init(alloc);
     defer p.deinit();
 
     const cases = [_][]const u8{

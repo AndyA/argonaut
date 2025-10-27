@@ -8,8 +8,8 @@ test {
     _ = @import("./string.zig");
 }
 
-const SC = sc.ShadowClass(void);
-const JP = jp.JSONParser(void);
+const SC = sc.ShadowClass;
+const JP = jp.JSONParser;
 
 fn benchmark(p: *JP, src: []const u8, times: usize) !void {
     for (1..times + 1) |i| {
@@ -54,7 +54,7 @@ pub fn main() !void {
         var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer gpa.deinit();
         const alloc = gpa.allocator();
-        var p = try jp.JSONParser(void).init(alloc);
+        var p = try jp.JSONParser.init(alloc);
         defer p.deinit();
         const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
         defer alloc.free(src);

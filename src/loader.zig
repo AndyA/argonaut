@@ -10,14 +10,13 @@ fn isOptional(field: std.builtin.Type.StructField) bool {
     return field.default_value_ptr != null or @typeInfo(field.type) == .optional;
 }
 
-pub fn Loader(comptime T: type, comptime Context: type) type {
-    const NT = JSONNode(Context);
+pub fn Loader(comptime T: type) type {
     switch (@typeInfo(T)) {
         .optional => |info| {
-            const ChildLoader = Loader(info.child, Context);
+            const ChildLoader = Loader(info.child);
             return struct {
                 pub const Type = T;
-                pub fn load(node: NT, alloc: Allocator) !T {
+                pub fn load(node: JSONNode, alloc: Allocator) !T {
                     return switch (node) {
                         .null => null,
                         else => try ChildLoader.load(node, alloc),
@@ -29,7 +28,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, _: Allocator) !T {
+                pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
                         .boolean => |b| b,
                         else => LoaderError.TypeMismatch,
@@ -41,7 +40,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, _: Allocator) !T {
+                pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .string => |n| try std.fmt.parseInt(T, n, 10),
                         else => LoaderError.TypeMismatch,
@@ -53,7 +52,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, _: Allocator) !T {
+                pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .string => |n| std.fmt.parseFloat(T, n),
                         else => LoaderError.TypeMismatch,
@@ -62,11 +61,11 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             };
         },
         .array => |info| {
-            const ChildLoader = Loader(info.child, Context);
+            const ChildLoader = Loader(info.child);
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, alloc: Allocator) !T {
+                pub fn load(node: JSONNode, alloc: Allocator) !T {
                     switch (node) {
                         .array, .multi => |a| {
                             var size = a.len;
@@ -91,13 +90,13 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             };
         },
         .pointer => |info| {
-            const ChildLoader = Loader(info.child, Context);
+            const ChildLoader = Loader(info.child);
             switch (info.size) {
                 .slice => {
                     return struct {
                         pub const Type = T;
 
-                        pub fn load(node: NT, alloc: Allocator) !T {
+                        pub fn load(node: JSONNode, alloc: Allocator) !T {
                             switch (node) {
                                 .array, .multi => |a| {
                                     var size = a.len;
@@ -154,7 +153,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
                     return struct {
                         pub const Type = T;
 
-                        pub fn load(node: NT, alloc: Allocator) !T {
+                        pub fn load(node: JSONNode, alloc: Allocator) !T {
                             const obj = try alloc.create(info.child);
                             errdefer alloc.destroy(obj);
                             obj.* = try ChildLoader.load(node, alloc);
@@ -169,7 +168,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             var child_loaders: [info.fields.len]type = undefined;
             var required_len: usize = 0;
             for (info.fields, 0..) |field, i| {
-                child_loaders[i] = Loader(field.type, Context);
+                child_loaders[i] = Loader(field.type);
                 if (!isOptional(field))
                     required_len = i + 1;
             }
@@ -179,7 +178,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, alloc: Allocator) !T {
+                pub fn load(node: JSONNode, alloc: Allocator) !T {
                     switch (node) {
                         .object => {
                             const class = node.objectClass();
@@ -233,7 +232,7 @@ pub fn Loader(comptime T: type, comptime Context: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: NT, alloc: Allocator) !T {
+                pub fn load(node: JSONNode, alloc: Allocator) !T {
                     const tag = try switch (node) {
                         .string => |str| blk: {
                             const out = try string.unescapeAlloc(str, alloc);
@@ -265,7 +264,7 @@ fn tc(
 }
 
 test Loader {
-    var p = try jp.JSONParser(void).init(std.testing.allocator);
+    var p = try jp.JSONParser.init(std.testing.allocator);
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };
@@ -403,7 +402,7 @@ test Loader {
         const alloc = arena.allocator();
 
         const node = try p.parse(case.json);
-        const got = try Loader(case.T, void).load(node, alloc);
+        const got = try Loader(case.T).load(node, alloc);
 
         try std.testing.expectEqualDeep(case.want, got);
     }
