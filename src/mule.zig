@@ -6,7 +6,6 @@ pub fn main() !void {
     defer p.deinit();
 
     const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
-    defer alloc.free(src);
 
     const node = try p.parseMulti(src);
 
