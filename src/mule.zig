@@ -56,10 +56,7 @@ const Change = struct {
                 },
                 duration: ?u32,
                 ebuAudioLayout: ?enum { EBU_R123_16c, EBU_R123_4b, EBU_R48_2a },
-                editRate: ?struct {
-                    denominator: u32,
-                    numerator: u32,
-                },
+                editRate: ?struct { denominator: u32, numerator: u32 },
                 formatDescription: ?[]const u8,
                 md5Hash: ?[]const u8,
                 startTimecodeEditUnits: ?u32,
