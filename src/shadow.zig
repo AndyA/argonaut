@@ -68,6 +68,8 @@ pub fn ObjectClass(comptime Context: type) type {
         }
 
         pub fn get(self: Self, key: []const u8) ?u32 {
+            if (@typeInfo(Context) != .void and @hasDecl(Context, "get"))
+                return self.context.get(key);
             return self.index_map.get(key);
         }
 
