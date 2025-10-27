@@ -187,6 +187,7 @@ test unescapeToBuffer {
         tc("\\uffe9", "\u{ffe9}"),
         tc("Hello\\uffe9now", "Hello\u{ffe9}now"),
         tc("\\udbff\\udfff", "\u{10ffff}"),
+        tc("<\\udbff\\udfff>", "<\u{10ffff}>"),
     };
 
     for (cases) |case| {
