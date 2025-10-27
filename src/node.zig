@@ -4,8 +4,9 @@ pub const JSONNode = union(enum) {
     null,
     boolean: bool,
     number: []const u8,
-    string: []const u8,
-    safe_string: []const u8, // needs no unescaping
+    json_string: []const u8, // JSON escaped
+    safe_string: []const u8, // needs no (un)escaping
+    wild_string: []const u8, // requires escaping
     multi: []const Self,
     array: []const Self,
     object: []const Self,
@@ -41,7 +42,8 @@ pub const JSONNode = union(enum) {
             .null => try w.print("null", .{}),
             .boolean => |b| try w.print("{any}", .{b}),
             .number => |n| try w.print("{s}", .{n}),
-            .string, .safe_string => |s| try w.print("\"{s}\"", .{s}),
+            .json_string, .safe_string => |s| try w.print("\"{s}\"", .{s}),
+            .wild_string => |s| try string.writeEscaped(s, w),
             .multi => |m| {
                 for (m) |item| {
                     try item.format(w);
@@ -84,15 +86,15 @@ test JSONNode {
     const class = try checked.getClass(alloc);
 
     const arr_body = [_]JSONNode{
-        .{ .string = "zig" },
+        .{ .json_string = "zig" },
         .{ .safe_string = "json" },
-        .{ .string = "parser" },
+        .{ .json_string = "parser" },
     };
 
     const obj_body = [_]JSONNode{
         .{ .class = class },
         .{ .number = "3.14" },
-        .{ .string = "Hello!" },
+        .{ .json_string = "Hello!" },
         .{ .array = &arr_body },
         .{ .boolean = false },
     };
@@ -113,3 +115,4 @@ test JSONNode {
 const std = @import("std");
 const assert = std.debug.assert;
 const sc = @import("./shadow.zig");
+const string = @import("./string.zig");

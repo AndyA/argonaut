@@ -6,6 +6,39 @@ const Error = error{
     Utf8CannotEncodeSurrogateHalf,
 };
 
+fn nextEscape(str: []const u8) usize {
+    for (str, 0..) |c, i|
+        if (c < 0x20 or c == 0x7f or c == '\\') return i;
+    return str.len;
+}
+
+pub fn needsEscape(str: []const u8) bool {
+    return nextEscape(str) != str.len;
+}
+
+pub fn writeEscaped(str: []const u8, w: *std.Io.Writer) std.Io.Writer.Error!void {
+    var slice = str;
+    while (slice.len > 0) {
+        const safe_len = nextEscape(slice);
+        if (safe_len > 0) {
+            try w.print("{s}", .{slice[0..safe_len]});
+            slice = slice[safe_len..];
+            continue;
+        }
+        assert(slice.len > 0);
+        switch (slice[0]) {
+            '\\' => try w.print("\\\\", .{}),
+            0x08 => try w.print("\\b", .{}),
+            0x0c => try w.print("\\f", .{}),
+            0x0a => try w.print("\\n", .{}),
+            0x0d => try w.print("\\r", .{}),
+            0x09 => try w.print("\\t", .{}),
+            else => |c| try w.print("\\u{x:>04}", .{c}),
+        }
+        slice = slice[1..];
+    }
+}
+
 pub fn isSurrogateHigh(cp: u21) bool {
     return cp >= 0xd800 and cp < 0xdc00;
 }

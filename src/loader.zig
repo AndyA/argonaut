@@ -42,7 +42,7 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number, .safe_string, .string => |n| try std.fmt.parseInt(T, n, 10),
+                        .number, .safe_string, .json_string => |n| try std.fmt.parseInt(T, n, 10),
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -54,7 +54,7 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number, .safe_string, .string => |n| std.fmt.parseFloat(T, n),
+                        .number, .safe_string, .json_string => |n| std.fmt.parseFloat(T, n),
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -112,7 +112,7 @@ pub fn Loader(comptime T: type) type {
                                     }
                                     return arr;
                                 },
-                                .string, .safe_string => |str| {
+                                .json_string, .safe_string => |str| {
                                     if (info.child != u8)
                                         return LoaderError.TypeMismatch;
 
@@ -122,7 +122,7 @@ pub fn Loader(comptime T: type) type {
                                     var out: []u8 = undefined;
 
                                     switch (node) {
-                                        .string => {
+                                        .json_string => {
                                             const out_len = try string.unescapedLength(str);
                                             out = try alloc.alloc(u8, out_len + adj);
                                             errdefer alloc.free(out);
@@ -234,7 +234,7 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, alloc: Allocator) !T {
                     const tag = try switch (node) {
-                        .string => |str| blk: {
+                        .json_string => |str| blk: {
                             const out = try string.unescapeAlloc(str, alloc);
                             defer alloc.free(out);
                             break :blk map.get(out);

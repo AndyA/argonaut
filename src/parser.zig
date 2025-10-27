@@ -151,7 +151,7 @@ pub const JSONParser = struct {
         const marked = self.state.takeMarked();
         const body = marked[0 .. marked.len - 1];
 
-        return if (safe) .{ .safe_string = body } else .{ .string = body };
+        return if (safe) .{ .safe_string = body } else .{ .json_string = body };
     }
 
     fn parseKey(self: *Self) Error![]const u8 {
@@ -159,7 +159,7 @@ pub const JSONParser = struct {
             return Error.MissingKey;
         const node = try self.parseString();
         return switch (node) {
-            .safe_string, .string => |s| s,
+            .safe_string, .json_string => |s| s,
             else => unreachable,
         };
     }
