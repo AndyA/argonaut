@@ -6,6 +6,10 @@ const Error = error{
     Utf8CannotEncodeSurrogateHalf,
 };
 
+const OOM = error{OutOfMemory};
+
+const ErrorOOM = Error || OOM;
+
 fn nextEscape(str: []const u8) usize {
     for (str, 0..) |c, i|
         if (c < 0x20 or c == 0x7f or c == '\\') return i;
@@ -63,7 +67,7 @@ test decodeSurrogatePair {
     try std.testing.expectEqual(0x10ffff, decodeSurrogatePair(0xdbff, 0xdfff));
 }
 
-pub fn unescapedLength(str: []const u8) !usize {
+pub fn unescapedLength(str: []const u8) Error!usize {
     var i_pos: usize = 0;
     var o_len: usize = 0;
     while (i_pos != str.len) {
@@ -82,11 +86,12 @@ pub fn unescapedLength(str: []const u8) !usize {
                 if (isSurrogateLow(cp))
                     return Error.Utf8CannotEncodeSurrogateHalf
                 else if (isSurrogateHigh(cp)) {
-                    if (i_pos <= str.len - 1 and str[i_pos] != '\\')
+                    const avail = str.len - i_pos;
+                    if (avail >= 1 and str[i_pos] != '\\')
                         return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
+                    if (avail >= 2 and str[i_pos + 1] != 'u')
                         return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (i_pos > str.len - 6)
+                    if (avail < 6)
                         return Error.BadUnicodeEscape;
                     const cp_low = try std.fmt.parseInt(u21, str[i_pos + 2 .. i_pos + 6], 16);
                     i_pos += 6;
@@ -106,7 +111,7 @@ pub fn unescapedLength(str: []const u8) !usize {
     return o_len;
 }
 
-pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
+pub fn unescapeToBuffer(str: []const u8, buf: []u8) Error!usize {
     var i_pos: usize = 0;
     var o_pos: usize = 0;
     while (i_pos != str.len) {
@@ -125,11 +130,12 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
                 if (isSurrogateLow(cp))
                     return Error.Utf8CannotEncodeSurrogateHalf
                 else if (isSurrogateHigh(cp)) {
-                    if (i_pos <= str.len - 1 and str[i_pos] != '\\')
+                    const avail = str.len - i_pos;
+                    if (avail >= 1 and str[i_pos] != '\\')
                         return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (i_pos <= str.len - 2 and str[i_pos + 1] != 'u')
+                    if (avail >= 2 and str[i_pos + 1] != 'u')
                         return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (i_pos > str.len - 6)
+                    if (avail < 6)
                         return Error.BadUnicodeEscape;
                     const cp_low = try std.fmt.parseInt(u21, str[i_pos + 2 .. i_pos + 6], 16);
                     i_pos += 6;
@@ -162,7 +168,7 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
     return o_pos;
 }
 
-pub fn unescapeAlloc(str: []const u8, alloc: std.mem.Allocator) ![]const u8 {
+pub fn unescapeAlloc(str: []const u8, alloc: std.mem.Allocator) ErrorOOM![]const u8 {
     const out_len = try unescapedLength(str);
     const out = try alloc.alloc(u8, out_len);
     errdefer alloc.free(out);
