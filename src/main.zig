@@ -1,11 +1,21 @@
-const std = @import("std");
-const Parser = @import("./parser.zig").Parser;
-const ShadowClass = @import("./shadow.zig").ShadowClass;
+pub fn main() !void {
+    var args = std.process.args();
+    _ = args.skip();
 
-test {
-    _ = @import("./parser.zig");
-    _ = @import("./loader.zig");
-    _ = @import("./string.zig");
+    while (args.next()) |arg| {
+        var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer gpa.deinit();
+        const alloc = gpa.allocator();
+        var p = Parser.init(alloc);
+        defer p.deinit();
+        const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
+        defer alloc.free(src);
+        // std.debug.print("{s}\n", .{arg});
+        std.debug.print("{s}: {d} bytes\n", .{ arg, src.len });
+        // try p.assembly.ensureTotalCapacity(alloc, src.len);
+        try benchmark(&p, src, 5);
+        walkShadow(&p.shadow_root, 0);
+    }
 }
 
 fn benchmark(p: *Parser, src: []const u8, times: usize) !void {
@@ -43,22 +53,12 @@ fn walkShadow(shadow: *const ShadowClass, depth: u32) void {
     }
 }
 
-pub fn main() !void {
-    var args = std.process.args();
-    _ = args.skip();
+const std = @import("std");
+const Parser = @import("./parser.zig").Parser;
+const ShadowClass = @import("./shadow.zig").ShadowClass;
 
-    while (args.next()) |arg| {
-        var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-        defer gpa.deinit();
-        const alloc = gpa.allocator();
-        var p = Parser.init(alloc);
-        defer p.deinit();
-        const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
-        defer alloc.free(src);
-        // std.debug.print("{s}\n", .{arg});
-        std.debug.print("{s}: {d} bytes\n", .{ arg, src.len });
-        // try p.assembly.ensureTotalCapacity(alloc, src.len);
-        try benchmark(&p, src, 5);
-        walkShadow(&p.shadow_root, 0);
-    }
+test {
+    _ = @import("./parser.zig");
+    _ = @import("./loader.zig");
+    _ = @import("./string.zig");
 }

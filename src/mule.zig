@@ -1,6 +1,27 @@
-const std = @import("std");
-const Parser = @import("./parser.zig").Parser;
-const Loader = @import("./loader.zig").Loader;
+pub fn main() !void {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var p = Parser.init(alloc);
+    defer p.deinit();
+
+    const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
+    defer alloc.free(src);
+
+    const node = try p.parseMulti(src);
+
+    const start = std.time.microTimestamp();
+    const changes = try Loader([]const Change).load(node, alloc);
+    const end = std.time.microTimestamp();
+
+    const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
+
+    std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
+
+    // for (changes) |change| {
+    //     std.debug.print("{s} {any} {d}\n", .{ change.id, change.operation, change.sequencer });
+    // }
+}
 
 const Locator = struct {
     resource: []const u8,
@@ -96,27 +117,6 @@ const Change = struct {
     document: Document,
 };
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var p = Parser.init(alloc);
-    defer p.deinit();
-
-    const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
-    defer alloc.free(src);
-
-    const node = try p.parseMulti(src);
-
-    const start = std.time.microTimestamp();
-    const changes = try Loader([]const Change).load(node, alloc);
-    const end = std.time.microTimestamp();
-
-    const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
-
-    std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
-
-    // for (changes) |change| {
-    //     std.debug.print("{s} {any} {d}\n", .{ change.id, change.operation, change.sequencer });
-    // }
-}
+const std = @import("std");
+const Parser = @import("./parser.zig").Parser;
+const Loader = @import("./loader.zig").Loader;
