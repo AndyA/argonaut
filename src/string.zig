@@ -32,6 +32,7 @@ pub fn writeEscaped(str: []const u8, w: *std.Io.Writer) std.Io.Writer.Error!void
         assert(slice.len > 0);
         switch (slice[0]) {
             '\\' => try w.print("\\\\", .{}),
+            '"' => try w.print("\\\"", .{}),
             0x08 => try w.print("\\b", .{}),
             0x0c => try w.print("\\f", .{}),
             0x0a => try w.print("\\n", .{}),
