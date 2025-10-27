@@ -38,7 +38,7 @@ pub fn writeEscaped(str: []const u8, w: *std.Io.Writer) std.Io.Writer.Error!void
             0x0a => try w.print("\\n", .{}),
             0x0d => try w.print("\\r", .{}),
             0x09 => try w.print("\\t", .{}),
-            else => |c| try w.print("\\u{x:>04}", .{c}),
+            else => |c| try w.print("\\u{x:0>4}", .{c}),
         }
         slice = slice[1..];
     }
