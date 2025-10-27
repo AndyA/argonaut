@@ -270,7 +270,7 @@ fn tc(
 }
 
 test Loader {
-    var p = jp.Parser.init(std.testing.allocator);
+    var p = Parser.init(std.testing.allocator);
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };
@@ -425,5 +425,5 @@ const StaticStringMap = std.static_string_map.StaticStringMap;
 const Allocator = std.mem.Allocator;
 
 const Node = @import("./node.zig").Node;
-const jp = @import("./parser.zig");
+const Parser = @import("./parser.zig");
 const string = @import("./string.zig");

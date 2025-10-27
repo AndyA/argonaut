@@ -54,7 +54,7 @@ fn walkShadow(shadow: *const ShadowClass, depth: u32) void {
 }
 
 const std = @import("std");
-const Parser = @import("./parser.zig").Parser;
+const Parser = @import("./parser.zig");
 const ShadowClass = @import("./shadow.zig").ShadowClass;
 
 test {
