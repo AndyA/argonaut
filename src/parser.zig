@@ -448,11 +448,11 @@ test Parser {
 test {
     _ = @import("./shadow.zig");
     _ = @import("./node.zig");
-    _ = @import("./parser_state.zig");
+    _ = @import("./ParserState.zig");
 }
 
 const std = @import("std");
 const assert = std.debug.assert;
 const ShadowClass = @import("./shadow.zig").ShadowClass;
 const Node = @import("./node.zig").Node;
-const ParserState = @import("./parser_state.zig").ParserState;
+const ParserState = @import("./ParserState.zig");
