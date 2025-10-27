@@ -1,5 +1,5 @@
 const std = @import("std");
-const jp = @import("./parser.zig");
+const Parser = @import("./parser.zig").Parser;
 const Loader = @import("./loader.zig").Loader;
 
 const Locator = struct {
@@ -100,7 +100,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var p = try jp.JSONParser.init(alloc);
+    var p = try Parser.init(alloc);
     defer p.deinit();
 
     const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);

@@ -16,7 +16,7 @@ pub fn Loader(comptime T: type) type {
             const ChildLoader = Loader(info.child);
             return struct {
                 pub const Type = T;
-                pub fn load(node: JSONNode, alloc: Allocator) !T {
+                pub fn load(node: Node, alloc: Allocator) !T {
                     return switch (node) {
                         .null => null,
                         else => try ChildLoader.load(node, alloc),
@@ -28,7 +28,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, _: Allocator) !T {
+                pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .boolean => |b| b,
                         else => LoaderError.TypeMismatch,
@@ -40,7 +40,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, _: Allocator) !T {
+                pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .json_string, .wild_string => |n| blk: {
                             break :blk try std.fmt.parseInt(T, n, 10);
@@ -54,7 +54,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, _: Allocator) !T {
+                pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .json_string, .wild_string => |n| blk: {
                             break :blk std.fmt.parseFloat(T, n);
@@ -69,7 +69,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, alloc: Allocator) !T {
+                pub fn load(node: Node, alloc: Allocator) !T {
                     switch (node) {
                         .array, .multi => |a| {
                             var size = a.len;
@@ -100,7 +100,7 @@ pub fn Loader(comptime T: type) type {
                     return struct {
                         pub const Type = T;
 
-                        pub fn load(node: JSONNode, alloc: Allocator) !T {
+                        pub fn load(node: Node, alloc: Allocator) !T {
                             switch (node) {
                                 .array, .multi => |a| {
                                     var size = a.len;
@@ -156,7 +156,7 @@ pub fn Loader(comptime T: type) type {
                     return struct {
                         pub const Type = T;
 
-                        pub fn load(node: JSONNode, alloc: Allocator) !T {
+                        pub fn load(node: Node, alloc: Allocator) !T {
                             const obj = try alloc.create(info.child);
                             errdefer alloc.destroy(obj);
                             obj.* = try ChildLoader.load(node, alloc);
@@ -181,7 +181,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, alloc: Allocator) !T {
+                pub fn load(node: Node, alloc: Allocator) !T {
                     switch (node) {
                         .object => {
                             const class = node.objectClass();
@@ -238,7 +238,7 @@ pub fn Loader(comptime T: type) type {
             return struct {
                 pub const Type = T;
 
-                pub fn load(node: JSONNode, alloc: Allocator) !T {
+                pub fn load(node: Node, alloc: Allocator) !T {
                     const tag = try switch (node) {
                         .json_string => |str| blk: {
                             const out = try string.unescapeAlloc(str, alloc);
@@ -270,7 +270,7 @@ fn tc(
 }
 
 test Loader {
-    var p = try jp.JSONParser.init(std.testing.allocator);
+    var p = try jp.Parser.init(std.testing.allocator);
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };
@@ -424,6 +424,6 @@ const assert = std.debug.assert;
 const StaticStringMap = std.static_string_map.StaticStringMap;
 const Allocator = std.mem.Allocator;
 
-const JSONNode = @import("./node.zig").JSONNode;
+const Node = @import("./node.zig").Node;
 const jp = @import("./parser.zig");
 const string = @import("./string.zig");

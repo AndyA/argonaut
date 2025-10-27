@@ -1,4 +1,4 @@
-pub const JSONNode = union(enum) {
+pub const Node = union(enum) {
     const Self = @This();
 
     null,
@@ -74,7 +74,7 @@ pub const JSONNode = union(enum) {
     }
 };
 
-test JSONNode {
+test Node {
     const alloc = std.testing.allocator;
     var root = sc.ShadowClass{};
     defer root.deinit(alloc);
@@ -85,13 +85,13 @@ test JSONNode {
     var checked = try tags.getNext(alloc, "checked");
     const class = try checked.getClass(alloc);
 
-    const arr_body = [_]JSONNode{
+    const arr_body = [_]Node{
         .{ .json_string = "zig" },
         .{ .safe_string = "json" },
         .{ .json_string = "parser" },
     };
 
-    const obj_body = [_]JSONNode{
+    const obj_body = [_]Node{
         .{ .class = class },
         .{ .number = "3.14" },
         .{ .json_string = "Hello!" },
@@ -99,7 +99,7 @@ test JSONNode {
         .{ .boolean = false },
     };
 
-    const obj = JSONNode{ .object = &obj_body };
+    const obj = Node{ .object = &obj_body };
 
     var buf: std.ArrayListUnmanaged(u8) = .empty;
     var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);

@@ -1,6 +1,6 @@
-pub const JSONParser = struct {
+pub const Parser = struct {
     const Self = @This();
-    pub const NodeList = std.ArrayListUnmanaged(JSONNode);
+    pub const NodeList = std.ArrayListUnmanaged(Node);
     const Allocator = std.mem.Allocator;
 
     pub const Error = error{
@@ -25,7 +25,7 @@ pub const JSONParser = struct {
 
     work_alloc: Allocator,
     assembly_alloc: Allocator,
-    shadow_root: sc.ShadowClass = .{},
+    shadow_root: ShadowClass = .{},
     state: ParserState = .{},
     parsing: bool = false,
     assembly: NodeList = .empty,
@@ -91,7 +91,7 @@ pub const JSONParser = struct {
         return scratch;
     }
 
-    fn appendToAssembly(self: *Self, nodes: []const JSONNode) Error![]const JSONNode {
+    fn appendToAssembly(self: *Self, nodes: []const Node) Error![]const Node {
         const start = self.assembly.items.len;
         const needed = self.assembly.items.len + nodes.len;
         if (self.assembly.capacity < needed) {
@@ -118,8 +118,8 @@ pub const JSONParser = struct {
     fn parseLiteral(
         self: *Self,
         comptime lit: []const u8,
-        comptime node: JSONNode,
-    ) Error!JSONNode {
+        comptime node: Node,
+    ) Error!Node {
         if (!self.state.checkLiteral(lit)) {
             @branchHint(.unlikely);
             return Error.BadToken;
@@ -127,7 +127,7 @@ pub const JSONParser = struct {
         return node;
     }
 
-    fn parseString(self: *Self) Error!JSONNode {
+    fn parseString(self: *Self) Error!Node {
         var safe = true;
         _ = self.state.next();
         self.state.setMark();
@@ -164,7 +164,7 @@ pub const JSONParser = struct {
         };
     }
 
-    fn parseNumber(self: *Self) Error!JSONNode {
+    fn parseNumber(self: *Self) Error!Node {
         self.state.setMark();
         const nc = self.state.peek();
         if (nc == '-') {
@@ -194,7 +194,7 @@ pub const JSONParser = struct {
         return .{ .number = self.state.takeMarked() };
     }
 
-    fn parseArray(self: *Self, depth: u32) Error!JSONNode {
+    fn parseArray(self: *Self, depth: u32) Error!Node {
         _ = self.state.next();
         try self.checkMore();
         var scratch = try self.getScratch(depth);
@@ -222,7 +222,7 @@ pub const JSONParser = struct {
         return .{ .array = items };
     }
 
-    fn parseObject(self: *Self, depth: u32) Error!JSONNode {
+    fn parseObject(self: *Self, depth: u32) Error!Node {
         _ = self.state.next();
         try self.checkMore();
 
@@ -263,7 +263,7 @@ pub const JSONParser = struct {
         return .{ .object = items };
     }
 
-    fn parseValue(self: *Self, depth: u32) Error!JSONNode {
+    fn parseValue(self: *Self, depth: u32) Error!Node {
         try self.checkMore();
         const nc = self.state.peek();
         return switch (nc) {
@@ -278,7 +278,7 @@ pub const JSONParser = struct {
         };
     }
 
-    fn parseMultiNode(self: *Self, depth: u32) Error!JSONNode {
+    fn parseMultiNode(self: *Self, depth: u32) Error!Node {
         var scratch = try self.getScratch(depth);
         while (true) {
             self.state.skipSpace();
@@ -314,14 +314,14 @@ pub const JSONParser = struct {
             return Error.JunkAfterInput;
     }
 
-    const ParseFn = fn (self: *Self, src: []const u8) Error!JSONNode;
-    const ParseDepthFn = fn (self: *Self, depth: u32) Error!JSONNode;
+    const ParseFn = fn (self: *Self, src: []const u8) Error!Node;
+    const ParseDepthFn = fn (self: *Self, depth: u32) Error!Node;
 
     fn parseUsing(
         self: *Self,
         src: []const u8,
         comptime parser: ParseDepthFn,
-    ) Error!JSONNode {
+    ) Error!Node {
         try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
 
         RESTART: while (true) {
@@ -365,11 +365,11 @@ pub const JSONParser = struct {
         return self.takeAssembly();
     }
 
-    pub fn parse(self: *Self, src: []const u8) Error!JSONNode {
+    pub fn parse(self: *Self, src: []const u8) Error!Node {
         return self.parseUsing(src, parseValue);
     }
 
-    pub fn parseMulti(self: *Self, src: []const u8) Error!JSONNode {
+    pub fn parseMulti(self: *Self, src: []const u8) Error!Node {
         return self.parseUsing(src, parseMultiNode);
     }
 
@@ -382,9 +382,9 @@ pub const JSONParser = struct {
     }
 };
 
-test JSONParser {
+test Parser {
     const alloc = std.testing.allocator;
-    var p = try JSONParser.init(alloc);
+    var p = try Parser.init(alloc);
     defer p.deinit();
 
     const cases = [_][]const u8{
@@ -453,6 +453,6 @@ test {
 
 const std = @import("std");
 const assert = std.debug.assert;
-const sc = @import("./shadow.zig");
-const JSONNode = @import("./node.zig").JSONNode;
+const ShadowClass = @import("./shadow.zig").ShadowClass;
+const Node = @import("./node.zig").Node;
 const ParserState = @import("./parser_state.zig").ParserState;
