@@ -42,7 +42,9 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number, .safe_string, .json_string => |n| try std.fmt.parseInt(T, n, 10),
+                        .number, .safe_string, .json_string, .wild_string => |n| blk: {
+                            break :blk try std.fmt.parseInt(T, n, 10);
+                        },
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -54,7 +56,9 @@ pub fn Loader(comptime T: type) type {
 
                 pub fn load(node: JSONNode, _: Allocator) !T {
                     return switch (node) {
-                        .number, .safe_string, .json_string => |n| std.fmt.parseFloat(T, n),
+                        .number, .safe_string, .json_string, .wild_string => |n| blk: {
+                            break :blk std.fmt.parseFloat(T, n);
+                        },
                         else => LoaderError.TypeMismatch,
                     };
                 }
@@ -112,7 +116,7 @@ pub fn Loader(comptime T: type) type {
                                     }
                                     return arr;
                                 },
-                                .json_string, .safe_string => |str| {
+                                .json_string, .safe_string, .wild_string => |str| {
                                     if (info.child != u8)
                                         return LoaderError.TypeMismatch;
 
@@ -128,7 +132,7 @@ pub fn Loader(comptime T: type) type {
                                             errdefer alloc.free(out);
                                             _ = try string.unescapeToBuffer(str, out);
                                         },
-                                        .safe_string => {
+                                        .safe_string, .wild_string => {
                                             out = try alloc.alloc(u8, size + adj);
                                             @memcpy(out[0..str.len], str);
                                         },
@@ -184,9 +188,9 @@ pub fn Loader(comptime T: type) type {
                             const class = node.objectClass();
                             const values = node.objectSlice();
                             var obj: T = undefined;
-                            inline for (info.fields, 0..) |field, i| {
+                            inline for (info.fields, ChildLoaders) |field, CL| {
                                 if (class.get(field.name)) |idx| {
-                                    const value = try ChildLoaders[i].load(values[idx], alloc);
+                                    const value = try CL.load(values[idx], alloc);
                                     @field(obj, field.name) = value;
                                 } else if (field.defaultValue()) |def| {
                                     @field(obj, field.name) = def;
@@ -204,9 +208,9 @@ pub fn Loader(comptime T: type) type {
                             if (a.len < min_tuple_len or a.len > info.fields.len)
                                 return LoaderError.TupleSizeMismatch;
                             var obj: T = undefined;
-                            inline for (info.fields, 0..) |field, i| {
+                            inline for (info.fields, ChildLoaders, 0..) |field, CL, i| {
                                 if (i < a.len) {
-                                    const value = try ChildLoaders[i].load(a[i], alloc);
+                                    const value = try CL.load(a[i], alloc);
                                     @field(obj, field.name) = value;
                                 } else if (field.defaultValue()) |def| {
                                     @field(obj, field.name) = def;
@@ -239,7 +243,7 @@ pub fn Loader(comptime T: type) type {
                             defer alloc.free(out);
                             break :blk map.get(out);
                         },
-                        .safe_string => |str| map.get(str),
+                        .safe_string, .wild_string => |str| map.get(str),
                         else => LoaderError.TypeMismatch,
                     };
                     if (tag) |t| return @enumFromInt(t);
