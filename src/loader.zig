@@ -270,7 +270,7 @@ fn tc(
 }
 
 test Loader {
-    var p = try jp.Parser.init(std.testing.allocator);
+    var p = jp.Parser.init(std.testing.allocator);
     defer p.deinit();
 
     const XY = struct { x: i32, y: i32 };

@@ -51,7 +51,7 @@ pub fn main() !void {
         var gpa = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer gpa.deinit();
         const alloc = gpa.allocator();
-        var p = try Parser.init(alloc);
+        var p = Parser.init(alloc);
         defer p.deinit();
         const src = try std.fs.cwd().readFileAlloc(arg, alloc, .unlimited);
         defer alloc.free(src);

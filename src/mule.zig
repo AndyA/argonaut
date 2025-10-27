@@ -100,7 +100,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
-    var p = try Parser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);

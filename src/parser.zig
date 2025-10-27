@@ -32,11 +32,11 @@ pub const Parser = struct {
     assembly_capacity: usize = 8192,
     scratch: std.ArrayListUnmanaged(NodeList) = .empty,
 
-    pub fn init(work_alloc: Allocator) !Self {
+    pub fn init(work_alloc: Allocator) Self {
         return Self.initCustom(work_alloc, work_alloc);
     }
 
-    pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) !Self {
+    pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) Self {
         return Self{
             .work_alloc = work_alloc,
             .assembly_alloc = assembly_alloc,
@@ -384,7 +384,7 @@ pub const Parser = struct {
 
 test Parser {
     const alloc = std.testing.allocator;
-    var p = try Parser.init(alloc);
+    var p = Parser.init(alloc);
     defer p.deinit();
 
     const cases = [_][]const u8{
