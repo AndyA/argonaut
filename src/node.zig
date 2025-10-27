@@ -76,48 +76,48 @@ pub const Node = union(enum) {
             .class => unreachable,
         }
     }
+
+    test {
+        const ShadowClass = @import("./shadow.zig").ShadowClass;
+        const alloc = std.testing.allocator;
+        var root = ShadowClass{};
+        defer root.deinit(alloc);
+
+        var pi = try root.getNext(alloc, "pi");
+        var message = try pi.getNext(alloc, "message");
+        var tags = try message.getNext(alloc, "tags");
+        var checked = try tags.getNext(alloc, "checked");
+        const class = try checked.getClass(alloc);
+
+        const arr_body = [_]Node{
+            .{ .json_string = "zig" },
+            .{ .safe_string = "json" },
+            .{ .json_string = "parser" },
+        };
+
+        const obj_body = [_]Node{
+            .{ .class = class },
+            .{ .number = "3.14" },
+            .{ .json_string = "Hello!" },
+            .{ .array = &arr_body },
+            .{ .boolean = false },
+        };
+
+        const obj = Node{ .object = &obj_body };
+
+        var buf: std.ArrayListUnmanaged(u8) = .empty;
+        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        defer w.deinit();
+        try w.writer.print("{f}", .{obj});
+        var output = w.toArrayList();
+        defer output.deinit(alloc);
+        try std.testing.expect(std.mem.eql(u8,
+            \\{"pi":3.14,"message":"Hello!","tags":["zig","json","parser"],"checked":false}
+        , output.items));
+    }
+
+    const std = @import("std");
+    const assert = std.debug.assert;
+    const ObjectClass = @import("./shadow.zig").ObjectClass;
+    const string = @import("./string.zig");
 };
-
-test Node {
-    const ShadowClass = @import("./shadow.zig").ShadowClass;
-    const alloc = std.testing.allocator;
-    var root = ShadowClass{};
-    defer root.deinit(alloc);
-
-    var pi = try root.getNext(alloc, "pi");
-    var message = try pi.getNext(alloc, "message");
-    var tags = try message.getNext(alloc, "tags");
-    var checked = try tags.getNext(alloc, "checked");
-    const class = try checked.getClass(alloc);
-
-    const arr_body = [_]Node{
-        .{ .json_string = "zig" },
-        .{ .safe_string = "json" },
-        .{ .json_string = "parser" },
-    };
-
-    const obj_body = [_]Node{
-        .{ .class = class },
-        .{ .number = "3.14" },
-        .{ .json_string = "Hello!" },
-        .{ .array = &arr_body },
-        .{ .boolean = false },
-    };
-
-    const obj = Node{ .object = &obj_body };
-
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
-    var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
-    defer w.deinit();
-    try w.writer.print("{f}", .{obj});
-    var output = w.toArrayList();
-    defer output.deinit(alloc);
-    try std.testing.expect(std.mem.eql(u8,
-        \\{"pi":3.14,"message":"Hello!","tags":["zig","json","parser"],"checked":false}
-    , output.items));
-}
-
-const std = @import("std");
-const assert = std.debug.assert;
-const ObjectClass = @import("./shadow.zig").ObjectClass;
-const string = @import("./string.zig");
