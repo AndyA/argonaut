@@ -47,6 +47,10 @@ pub fn isSurrogateLow(cp: u21) bool {
     return cp >= 0xdc00 and cp < 0xe000;
 }
 
+pub fn isSurrogate(cp: u21) bool {
+    return isSurrogateLow(cp) or isSurrogateHigh(cp);
+}
+
 pub fn decodeSurrogatePair(cp_high: u21, cp_low: u21) u21 {
     assert(isSurrogateHigh(cp_high));
     assert(isSurrogateLow(cp_low));
@@ -88,6 +92,7 @@ pub fn unescapedLength(str: []const u8) !usize {
                     if (!isSurrogateLow((cp_low)))
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     cp = decodeSurrogatePair(cp, cp_low);
+                    if (isSurrogate(cp)) return Error.InvalidCharacter;
                 }
                 o_len += try std.unicode.utf8CodepointSequenceLength(cp);
             } else {
@@ -129,6 +134,7 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) !usize {
                     if (!isSurrogateLow((cp_low)))
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     cp = decodeSurrogatePair(cp, cp_low);
+                    if (isSurrogate(cp)) return Error.InvalidCharacter;
                 }
                 o_pos += try std.unicode.utf8Encode(cp, buf[o_pos..]);
             } else {
