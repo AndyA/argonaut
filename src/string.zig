@@ -87,9 +87,7 @@ pub fn unescapedLength(str: []const u8) Error!usize {
                     return Error.Utf8CannotEncodeSurrogateHalf
                 else if (isSurrogateHigh(cp)) {
                     const avail = str.len - i_pos;
-                    if (avail >= 1 and str[i_pos] != '\\')
-                        return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (avail >= 2 and str[i_pos + 1] != 'u')
+                    if (avail >= 2 and !std.mem.eql(u8, str[i_pos .. i_pos + 2], "\\u"))
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     if (avail < 6)
                         return Error.BadUnicodeEscape;
@@ -131,9 +129,7 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) Error!usize {
                     return Error.Utf8CannotEncodeSurrogateHalf
                 else if (isSurrogateHigh(cp)) {
                     const avail = str.len - i_pos;
-                    if (avail >= 1 and str[i_pos] != '\\')
-                        return Error.Utf8CannotEncodeSurrogateHalf;
-                    if (avail >= 2 and str[i_pos + 1] != 'u')
+                    if (avail >= 2 and !std.mem.eql(u8, str[i_pos .. i_pos + 2], "\\u"))
                         return Error.Utf8CannotEncodeSurrogateHalf;
                     if (avail < 6)
                         return Error.BadUnicodeEscape;
