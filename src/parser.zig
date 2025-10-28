@@ -1,4 +1,4 @@
-const Self = @This();
+const Parser = @This();
 pub const NodeList = std.ArrayListUnmanaged(Node);
 const Allocator = std.mem.Allocator;
 
@@ -31,18 +31,18 @@ assembly: NodeList = .empty,
 assembly_capacity: usize = 8192,
 scratch: std.ArrayListUnmanaged(NodeList) = .empty,
 
-pub fn init(work_alloc: Allocator) Self {
-    return Self.initCustom(work_alloc, work_alloc);
+pub fn init(work_alloc: Allocator) Parser {
+    return Parser.initCustom(work_alloc, work_alloc);
 }
 
-pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) Self {
-    return Self{
+pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) Parser {
+    return Parser{
         .work_alloc = work_alloc,
         .assembly_alloc = assembly_alloc,
     };
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *Parser) void {
     for (self.scratch.items) |*s| {
         s.deinit(self.work_alloc);
     }
@@ -52,36 +52,36 @@ pub fn deinit(self: *Self) void {
     self.* = undefined;
 }
 
-pub fn setAssemblyAllocator(self: *Self, alloc: Allocator) void {
+pub fn setAssemblyAllocator(self: *Parser, alloc: Allocator) void {
     self.assembly.deinit(self.assembly_alloc);
     self.assembly = .empty;
     self.assembly_alloc = alloc;
 }
 
-pub fn takeAssembly(self: *Self) Error!NodeList {
+pub fn takeAssembly(self: *Parser) Error!NodeList {
     defer self.assembly = .empty;
     return self.assembly;
 }
 
-fn checkEof(self: *const Self) Error!void {
+fn checkEof(self: *const Parser) Error!void {
     if (self.state.eof()) {
         @branchHint(.unlikely);
         return Error.UnexpectedEndOfInput;
     }
 }
 
-fn checkMore(self: *Self) Error!void {
+fn checkMore(self: *Parser) Error!void {
     self.state.skipSpace();
     try self.checkEof();
 }
 
-fn checkDigits(self: *Self) Error!void {
+fn checkDigits(self: *Parser) Error!void {
     const start = self.state.pos;
     self.state.skipDigits();
     if (self.state.pos == start) return Error.MissingDigits;
 }
 
-fn getScratch(self: *Self, depth: u32) Error!*NodeList {
+fn getScratch(self: *Parser, depth: u32) Error!*NodeList {
     while (self.scratch.items.len <= depth) {
         try self.scratch.append(self.work_alloc, .empty);
     }
@@ -90,7 +90,7 @@ fn getScratch(self: *Self, depth: u32) Error!*NodeList {
     return scratch;
 }
 
-fn appendToAssembly(self: *Self, nodes: []const Node) Error![]const Node {
+fn appendToAssembly(self: *Parser, nodes: []const Node) Error![]const Node {
     const start = self.assembly.items.len;
     const needed = self.assembly.items.len + nodes.len;
     if (self.assembly.capacity < needed) {
@@ -115,7 +115,7 @@ fn appendToAssembly(self: *Self, nodes: []const Node) Error![]const Node {
 }
 
 fn parseLiteral(
-    self: *Self,
+    self: *Parser,
     comptime lit: []const u8,
     comptime node: Node,
 ) Error!Node {
@@ -126,7 +126,7 @@ fn parseLiteral(
     return node;
 }
 
-fn parseString(self: *Self) Error!Node {
+fn parseString(self: *Parser) Error!Node {
     var safe = true;
     _ = self.state.next();
     self.state.setMark();
@@ -153,7 +153,7 @@ fn parseString(self: *Self) Error!Node {
     return if (safe) .{ .safe_string = body } else .{ .json_string = body };
 }
 
-fn parseKey(self: *Self) Error![]const u8 {
+fn parseKey(self: *Parser) Error![]const u8 {
     if (self.state.peek() != '"')
         return Error.MissingKey;
     const node = try self.parseString();
@@ -163,7 +163,7 @@ fn parseKey(self: *Self) Error![]const u8 {
     };
 }
 
-fn parseNumber(self: *Self) Error!Node {
+fn parseNumber(self: *Parser) Error!Node {
     self.state.setMark();
     const nc = self.state.peek();
     if (nc == '-') {
@@ -193,7 +193,7 @@ fn parseNumber(self: *Self) Error!Node {
     return .{ .number = self.state.takeMarked() };
 }
 
-fn parseArray(self: *Self, depth: u32) Error!Node {
+fn parseArray(self: *Parser, depth: u32) Error!Node {
     _ = self.state.next();
     try self.checkMore();
     var scratch = try self.getScratch(depth);
@@ -221,7 +221,7 @@ fn parseArray(self: *Self, depth: u32) Error!Node {
     return .{ .array = items };
 }
 
-fn parseObject(self: *Self, depth: u32) Error!Node {
+fn parseObject(self: *Parser, depth: u32) Error!Node {
     _ = self.state.next();
     try self.checkMore();
 
@@ -262,7 +262,7 @@ fn parseObject(self: *Self, depth: u32) Error!Node {
     return .{ .object = items };
 }
 
-fn parseValue(self: *Self, depth: u32) Error!Node {
+fn parseValue(self: *Parser, depth: u32) Error!Node {
     try self.checkMore();
     const nc = self.state.peek();
     return switch (nc) {
@@ -277,7 +277,7 @@ fn parseValue(self: *Self, depth: u32) Error!Node {
     };
 }
 
-fn parseMultiNode(self: *Self, depth: u32) Error!Node {
+fn parseMultiNode(self: *Parser, depth: u32) Error!Node {
     var scratch = try self.getScratch(depth);
     while (true) {
         self.state.skipSpace();
@@ -295,29 +295,29 @@ fn parseMultiNode(self: *Self, depth: u32) Error!Node {
     return .{ .multi = items };
 }
 
-fn startParsing(self: *Self, src: []const u8) void {
+fn startParsing(self: *Parser, src: []const u8) void {
     assert(!self.parsing);
     self.state = ParserState{ .src = src };
     self.assembly.items.len = 0;
     self.parsing = true;
 }
 
-fn stopParsing(self: *Self) void {
+fn stopParsing(self: *Parser) void {
     assert(self.parsing);
     self.parsing = false;
 }
 
-fn checkForJunk(self: *Self) Error!void {
+fn checkForJunk(self: *Parser) Error!void {
     self.state.skipSpace();
     if (!self.state.eof())
         return Error.JunkAfterInput;
 }
 
-const ParseFn = fn (self: *Self, src: []const u8) Error!Node;
-const ParseDepthFn = fn (self: *Self, depth: u32) Error!Node;
+const ParseFn = fn (self: *Parser, src: []const u8) Error!Node;
+const ParseDepthFn = fn (self: *Parser, depth: u32) Error!Node;
 
 fn parseUsing(
-    self: *Self,
+    self: *Parser,
     src: []const u8,
     comptime parser: ParseDepthFn,
 ) Error!Node {
@@ -346,7 +346,7 @@ fn parseUsing(
 }
 
 fn parseWithAllocator(
-    self: *Self,
+    self: *Parser,
     alloc: Allocator,
     src: []const u8,
     comptime parser: ParseFn,
@@ -364,19 +364,19 @@ fn parseWithAllocator(
     return self.takeAssembly();
 }
 
-pub fn parse(self: *Self, src: []const u8) Error!Node {
+pub fn parse(self: *Parser, src: []const u8) Error!Node {
     return self.parseUsing(src, parseValue);
 }
 
-pub fn parseMulti(self: *Self, src: []const u8) Error!Node {
+pub fn parseMulti(self: *Parser, src: []const u8) Error!Node {
     return self.parseUsing(src, parseMultiNode);
 }
 
-pub fn parseOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+pub fn parseOwned(self: *Parser, alloc: Allocator, src: []const u8) Error!NodeList {
     return self.parseWithAllocator(alloc, src, parse);
 }
 
-pub fn parseMultiOwned(self: *Self, alloc: Allocator, src: []const u8) Error!NodeList {
+pub fn parseMultiOwned(self: *Parser, alloc: Allocator, src: []const u8) Error!NodeList {
     return self.parseWithAllocator(alloc, src, parseMulti);
 }
 
