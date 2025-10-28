@@ -64,7 +64,7 @@ pub const ShadowClass = struct {
 
     parent: ?*const Self = null,
     object_class: ?ObjectClass = null,
-    name: []const u8 = "$",
+    name: []const u8 = "$", // not normally referred to
     next: NextMap = .empty,
     index: u32 = RootIndex,
     usage: usize = 0,
