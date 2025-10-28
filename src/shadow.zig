@@ -6,9 +6,8 @@ fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
     var index: IndexMap = .empty;
     if (names.len > 0) {
         try index.ensureTotalCapacity(alloc, @intCast(names.len));
-        for (names, 0..) |n, i| {
+        for (names, 0..) |n, i|
             index.putAssumeCapacity(n, @intCast(i));
-        }
     }
     return index;
 }
