@@ -5,17 +5,28 @@ pub fn main() !void {
     var p = Parser.init(alloc);
     defer p.deinit();
 
-    const src = try std.fs.cwd().readFileAlloc("tmp/test-cdc.json", alloc, .unlimited);
+    const src = try std.fs.cwd().readFileAlloc("tmp/array.json", alloc, .unlimited);
 
-    const node = try p.parseMulti(src);
+    {
+        const start = std.time.microTimestamp();
+        const node = try p.parse(src);
+        const changes = try Loader([]const Change).load(node, alloc);
+        const end = std.time.microTimestamp();
 
-    const start = std.time.microTimestamp();
-    const changes = try Loader([]const Change).load(node, alloc);
-    const end = std.time.microTimestamp();
+        const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
 
-    const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
+        std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
+    }
+    // var w_buf: [128 * 1024]u8 = undefined;
+    // var w = std.fs.File.stdout().writer(&w_buf);
 
-    std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
+    // const root = Node{ .array = node.multi };
+    // try w.interface.print("{f}", .{root});
+
+    // try w.interface.flush();
+
+    // const parsed = try std.json.parseFromSliceLeaky([]const Change, alloc, src, .{});
+    // defer parsed.deinit();
 
     // for (changes) |change| {
     //     std.debug.print("{s} {any} {d}\n", .{ change.id, change.operation, change.sequencer });
@@ -80,4 +91,5 @@ const Change = struct {
 
 const std = @import("std");
 const Parser = @import("./parser.zig");
+const Node = @import("./node.zig").Node;
 const Loader = @import("./loader.zig").Loader;
