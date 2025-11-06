@@ -165,10 +165,10 @@ pub fn unescapeToBuffer(str: []const u8, buf: []u8) Error!usize {
     return o_pos;
 }
 
-pub fn unescapeAlloc(str: []const u8, alloc: std.mem.Allocator) ErrorOOM![]const u8 {
+pub fn unescapeAlloc(str: []const u8, gpa: std.mem.Allocator) ErrorOOM![]const u8 {
     const out_len = try unescapedLength(str);
-    const out = try alloc.alloc(u8, out_len);
-    errdefer alloc.free(out);
+    const out = try gpa.alloc(u8, out_len);
+    errdefer gpa.free(out);
     _ = try unescapeToBuffer(str, out);
     return out;
 }

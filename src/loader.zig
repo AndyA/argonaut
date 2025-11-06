@@ -15,19 +15,16 @@ pub fn Loader(comptime T: type) type {
         .optional => |info| {
             const ChildLoader = Loader(info.child);
             return struct {
-                pub const Type = T;
-                pub fn load(node: Node, alloc: Allocator) !T {
+                pub fn load(node: Node, gpa: Allocator) !T {
                     return switch (node) {
                         .null => null,
-                        else => try ChildLoader.load(node, alloc),
+                        else => try ChildLoader.load(node, gpa),
                     };
                 }
             };
         },
         .bool => {
             return struct {
-                pub const Type = T;
-
                 pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .boolean => |b| b,
@@ -38,8 +35,6 @@ pub fn Loader(comptime T: type) type {
         },
         .int => {
             return struct {
-                pub const Type = T;
-
                 pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .json_string, .wild_string => |n| blk: {
@@ -52,8 +47,6 @@ pub fn Loader(comptime T: type) type {
         },
         .float => {
             return struct {
-                pub const Type = T;
-
                 pub fn load(node: Node, _: Allocator) !T {
                     return switch (node) {
                         .number, .safe_string, .json_string, .wild_string => |n| blk: {
@@ -67,9 +60,7 @@ pub fn Loader(comptime T: type) type {
         .array => |info| {
             const ChildLoader = Loader(info.child);
             return struct {
-                pub const Type = T;
-
-                pub fn load(node: Node, alloc: Allocator) !T {
+                pub fn load(node: Node, gpa: Allocator) !T {
                     switch (node) {
                         .array, .multi => |a| {
                             var size = a.len;
@@ -78,7 +69,7 @@ pub fn Loader(comptime T: type) type {
                             if (info.sentinel_ptr != null) size += 1;
                             var arr: T = undefined;
                             for (a, 0..) |item, i| {
-                                arr[i] = try ChildLoader.load(item, alloc);
+                                arr[i] = try ChildLoader.load(item, gpa);
                             }
                             if (info.sentinel()) |s| {
                                 arr.len -= 1;
@@ -98,17 +89,15 @@ pub fn Loader(comptime T: type) type {
             switch (info.size) {
                 .slice => {
                     return struct {
-                        pub const Type = T;
-
-                        pub fn load(node: Node, alloc: Allocator) !T {
+                        pub fn load(node: Node, gpa: Allocator) !T {
                             switch (node) {
                                 .array, .multi => |a| {
                                     var size = a.len;
                                     if (info.sentinel_ptr != null) size += 1;
-                                    var arr = try alloc.alloc(info.child, size);
-                                    errdefer alloc.free(arr);
+                                    var arr = try gpa.alloc(info.child, size);
+                                    errdefer gpa.free(arr);
                                     for (a, 0..) |item, i| {
-                                        arr[i] = try ChildLoader.load(item, alloc);
+                                        arr[i] = try ChildLoader.load(item, gpa);
                                     }
                                     if (info.sentinel()) |s| {
                                         arr.len -= 1;
@@ -128,11 +117,11 @@ pub fn Loader(comptime T: type) type {
                                     switch (node) {
                                         .json_string => {
                                             const out_len = try string.unescapedLength(str);
-                                            out = try alloc.alloc(u8, out_len + adj);
+                                            out = try gpa.alloc(u8, out_len + adj);
                                             _ = string.unescapeToBuffer(str, out) catch unreachable;
                                         },
                                         .safe_string, .wild_string => {
-                                            out = try alloc.alloc(u8, size + adj);
+                                            out = try gpa.alloc(u8, size + adj);
                                             @memcpy(out[0..str.len], str);
                                         },
                                         else => unreachable,
@@ -154,12 +143,10 @@ pub fn Loader(comptime T: type) type {
                 },
                 .one => {
                     return struct {
-                        pub const Type = T;
-
-                        pub fn load(node: Node, alloc: Allocator) !T {
-                            const obj = try alloc.create(info.child);
-                            errdefer alloc.destroy(obj);
-                            obj.* = try ChildLoader.load(node, alloc);
+                        pub fn load(node: Node, gpa: Allocator) !T {
+                            const obj = try gpa.create(info.child);
+                            errdefer gpa.destroy(obj);
+                            obj.* = try ChildLoader.load(node, gpa);
                             return obj;
                         }
                     };
@@ -179,9 +166,7 @@ pub fn Loader(comptime T: type) type {
             const min_tuple_len = required_len;
 
             return struct {
-                pub const Type = T;
-
-                pub fn load(node: Node, alloc: Allocator) !T {
+                pub fn load(node: Node, gpa: Allocator) !T {
                     switch (node) {
                         .object => {
                             const class = node.objectClass();
@@ -189,7 +174,7 @@ pub fn Loader(comptime T: type) type {
                             var obj: T = undefined;
                             inline for (info.fields, ChildLoaders) |field, CL| {
                                 if (class.get(field.name)) |idx| {
-                                    const value = try CL.load(values[idx], alloc);
+                                    const value = try CL.load(values[idx], gpa);
                                     @field(obj, field.name) = value;
                                 } else if (field.defaultValue()) |def| {
                                     @field(obj, field.name) = def;
@@ -212,7 +197,7 @@ pub fn Loader(comptime T: type) type {
                             var obj: T = undefined;
                             inline for (info.fields, ChildLoaders, 0..) |field, CL, i| {
                                 if (i < a.len) {
-                                    const value = try CL.load(a[i], alloc);
+                                    const value = try CL.load(a[i], gpa);
                                     @field(obj, field.name) = value;
                                 } else if (field.defaultValue()) |def| {
                                     @field(obj, field.name) = def;
@@ -236,13 +221,11 @@ pub fn Loader(comptime T: type) type {
             }
             const map = StaticStringMap(info.tag_type).initComptime(kv);
             return struct {
-                pub const Type = T;
-
-                pub fn load(node: Node, alloc: Allocator) !T {
+                pub fn load(node: Node, gpa: Allocator) !T {
                     const tag = try switch (node) {
                         .json_string => |str| blk: {
-                            const out = try string.unescapeAlloc(str, alloc);
-                            defer alloc.free(out);
+                            const out = try string.unescapeAlloc(str, gpa);
+                            defer gpa.free(out);
                             break :blk map.get(out);
                         },
                         .safe_string, .wild_string => |str| map.get(str),
@@ -405,10 +388,10 @@ test Loader {
     inline for (cases) |case| {
         var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
         defer arena.deinit();
-        const alloc = arena.allocator();
+        const gpa = arena.allocator();
 
         const node = try p.parse(case.json);
-        const got = try Loader(case.T).load(node, alloc);
+        const got = try Loader(case.T).load(node, gpa);
 
         try std.testing.expectEqualDeep(case.want, got);
     }

@@ -2,10 +2,10 @@ const OOM = error{OutOfMemory};
 
 const IndexMap = std.StringHashMapUnmanaged(u32);
 
-fn indexMapForNames(alloc: Allocator, names: []const []const u8) OOM!IndexMap {
+fn indexMapForNames(gpa: Allocator, names: []const []const u8) OOM!IndexMap {
     var index: IndexMap = .empty;
     if (names.len > 0) {
-        try index.ensureTotalCapacity(alloc, @intCast(names.len));
+        try index.ensureTotalCapacity(gpa, @intCast(names.len));
         for (names, 0..) |n, i|
             index.putAssumeCapacity(n, @intCast(i));
     }
@@ -19,23 +19,23 @@ pub const ObjectClass = struct {
     names: []const []const u8,
     unescaped_names: []const []const u8,
 
-    pub fn initFromShadow(alloc: Allocator, shadow: *const ShadowClass) !Self {
+    pub fn initFromShadow(gpa: Allocator, shadow: *const ShadowClass) !Self {
         const size = shadow.size();
 
-        var names = try alloc.alloc([]const u8, size);
-        errdefer alloc.free(names);
-        var unescaped_names = try alloc.alloc([]const u8, names.len);
-        errdefer alloc.free(unescaped_names);
+        var names = try gpa.alloc([]const u8, size);
+        errdefer gpa.free(names);
+        var unescaped_names = try gpa.alloc([]const u8, names.len);
+        errdefer gpa.free(unescaped_names);
 
         var class = shadow;
         while (class.size() > 0) : (class = class.parent.?) {
             assert(class.index < size);
             names[class.index] = class.name;
-            unescaped_names[class.index] = try string.unescapeAlloc(class.name, alloc);
+            unescaped_names[class.index] = try string.unescapeAlloc(class.name, gpa);
         }
 
         const self = Self{
-            .index_map = try indexMapForNames(alloc, unescaped_names),
+            .index_map = try indexMapForNames(gpa, unescaped_names),
             .names = names,
             .unescaped_names = unescaped_names,
         };
@@ -43,11 +43,11 @@ pub const ObjectClass = struct {
         return self;
     }
 
-    pub fn deinit(self: *Self, alloc: Allocator) void {
-        for (self.unescaped_names) |s| alloc.free(s);
-        alloc.free(self.unescaped_names);
-        self.index_map.deinit(alloc);
-        alloc.free(self.names);
+    pub fn deinit(self: *Self, gpa: Allocator) void {
+        for (self.unescaped_names) |s| gpa.free(s);
+        gpa.free(self.unescaped_names);
+        self.index_map.deinit(gpa);
+        gpa.free(self.names);
         self.* = undefined;
     }
 
@@ -73,22 +73,22 @@ pub const ShadowClass = struct {
         return self.index +% 1;
     }
 
-    fn deinitContents(self: *Self, alloc: Allocator) void {
+    fn deinitContents(self: *Self, gpa: Allocator) void {
         var iter = self.next.valueIterator();
-        while (iter.next()) |v| v.*.deinitNonRoot(alloc);
-        if (self.object_class) |*class| class.deinit(alloc);
-        self.next.deinit(alloc);
+        while (iter.next()) |v| v.*.deinitNonRoot(gpa);
+        if (self.object_class) |*class| class.deinit(gpa);
+        self.next.deinit(gpa);
     }
 
-    fn deinitNonRoot(self: *Self, alloc: Allocator) void {
-        self.deinitContents(alloc);
-        alloc.free(self.name);
-        alloc.destroy(self);
+    fn deinitNonRoot(self: *Self, gpa: Allocator) void {
+        self.deinitContents(gpa);
+        gpa.free(self.name);
+        gpa.destroy(self);
     }
 
-    pub fn deinit(self: *Self, alloc: Allocator) void {
+    pub fn deinit(self: *Self, gpa: Allocator) void {
         assert(self.size() == 0); // Must be root
-        self.deinitContents(alloc);
+        self.deinitContents(gpa);
         self.* = undefined;
     }
 
@@ -97,11 +97,11 @@ pub const ShadowClass = struct {
         return self;
     }
 
-    pub fn getNext(self: *Self, alloc: Allocator, name: []const u8) OOM!*Self {
-        const slot = try self.next.getOrPutContextAdapted(alloc, name, ctx, ctx);
+    pub fn getNext(self: *Self, gpa: Allocator, name: []const u8) OOM!*Self {
+        const slot = try self.next.getOrPutContextAdapted(gpa, name, ctx, ctx);
         if (!slot.found_existing) {
-            const key_name = try alloc.dupe(u8, name);
-            const next = try alloc.create(Self);
+            const key_name = try gpa.dupe(u8, name);
+            const next = try gpa.create(Self);
             next.* = .{
                 .parent = self,
                 .name = key_name,
@@ -113,9 +113,9 @@ pub const ShadowClass = struct {
         return slot.value_ptr.*.startWalk();
     }
 
-    pub fn getClass(self: *Self, alloc: Allocator) !*const ObjectClass {
+    pub fn getClass(self: *Self, gpa: Allocator) !*const ObjectClass {
         if (self.object_class == null)
-            self.object_class = try ObjectClass.initFromShadow(alloc, self);
+            self.object_class = try ObjectClass.initFromShadow(gpa, self);
 
         return &self.object_class.?;
     }
@@ -123,31 +123,31 @@ pub const ShadowClass = struct {
 
 test ShadowClass {
     const SC = ShadowClass;
-    const alloc = std.testing.allocator;
+    const gpa = std.testing.allocator;
     var root = SC{};
-    defer root.deinit(alloc);
+    defer root.deinit(gpa);
 
     try std.testing.expectEqual(root.name, "$");
 
-    var foo1 = try root.getNext(alloc, "foo");
+    var foo1 = try root.getNext(gpa, "foo");
     try std.testing.expectEqual(foo1.index, 0);
     try std.testing.expectEqual(foo1.parent, &root);
 
-    var bar1 = try foo1.getNext(alloc, "bar");
+    var bar1 = try foo1.getNext(gpa, "bar");
     try std.testing.expectEqual(bar1.index, 1);
     try std.testing.expectEqual(bar1.parent, foo1);
 
-    var foo2 = try root.getNext(alloc, "foo");
+    var foo2 = try root.getNext(gpa, "foo");
     try std.testing.expectEqual(foo1, foo2);
-    var bar2 = try foo2.getNext(alloc, "bar");
+    var bar2 = try foo2.getNext(gpa, "bar");
     try std.testing.expectEqual(bar1, bar2);
 
-    const cls1 = try bar1.getClass(alloc);
-    const cls2 = try bar2.getClass(alloc);
+    const cls1 = try bar1.getClass(gpa);
+    const cls2 = try bar2.getClass(gpa);
 
     try std.testing.expectEqual(cls1, cls2);
 
-    const empty = try root.getClass(alloc);
+    const empty = try root.getClass(gpa);
     try std.testing.expectEqualDeep(0, empty.names.len);
 }
 

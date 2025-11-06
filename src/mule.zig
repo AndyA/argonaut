@@ -1,19 +1,19 @@
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const alloc = arena.allocator();
-    var p = Parser.init(alloc);
+    const gpa = arena.allocator();
+    var p = Parser.init(gpa);
     defer p.deinit();
 
-    const src = try std.fs.cwd().readFileAlloc("tmp/array.json", alloc, .unlimited);
+    const src = try std.fs.cwd().readFileAlloc("tmp/array.json", gpa, .unlimited);
 
     {
-        const start = std.time.microTimestamp();
+        var timer = try std.time.Timer.start();
         const node = try p.parse(src);
-        const changes = try Loader([]const Change).load(node, alloc);
-        const end = std.time.microTimestamp();
+        const changes = try Loader([]const Change).load(node, gpa);
+        const elapsed = timer.read();
 
-        const seconds = @as(f64, @floatFromInt(end - start)) / 1_000_000;
+        const seconds = @as(f64, @floatFromInt(elapsed)) / 1_000_000_000;
 
         std.debug.print("Loaded {d} in {d}s\n", .{ changes.len, seconds });
     }

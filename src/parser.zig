@@ -22,8 +22,8 @@ pub const Error = error{
     Utf8CannotEncodeSurrogateHalf,
 };
 
-work_alloc: Allocator,
-assembly_alloc: Allocator,
+work_gpa: Allocator,
+assembly_gpa: Allocator,
 shadow_root: ShadowClass = .{},
 state: ParserState = .{},
 parsing: bool = false,
@@ -31,31 +31,31 @@ assembly: NodeList = .empty,
 assembly_capacity: usize = 8192,
 scratch: std.ArrayListUnmanaged(NodeList) = .empty,
 
-pub fn init(work_alloc: Allocator) Parser {
-    return Parser.initCustom(work_alloc, work_alloc);
+pub fn init(work_gpa: Allocator) Parser {
+    return Parser.initCustom(work_gpa, work_gpa);
 }
 
-pub fn initCustom(work_alloc: Allocator, assembly_alloc: Allocator) Parser {
+pub fn initCustom(work_gpa: Allocator, assembly_gpa: Allocator) Parser {
     return Parser{
-        .work_alloc = work_alloc,
-        .assembly_alloc = assembly_alloc,
+        .work_gpa = work_gpa,
+        .assembly_gpa = assembly_gpa,
     };
 }
 
 pub fn deinit(self: *Parser) void {
     for (self.scratch.items) |*s| {
-        s.deinit(self.work_alloc);
+        s.deinit(self.work_gpa);
     }
-    self.scratch.deinit(self.work_alloc);
-    self.shadow_root.deinit(self.work_alloc);
-    self.assembly.deinit(self.assembly_alloc);
+    self.scratch.deinit(self.work_gpa);
+    self.shadow_root.deinit(self.work_gpa);
+    self.assembly.deinit(self.assembly_gpa);
     self.* = undefined;
 }
 
-pub fn setAssemblyAllocator(self: *Parser, alloc: Allocator) void {
-    self.assembly.deinit(self.assembly_alloc);
+pub fn setAssemblyAllocator(self: *Parser, gpa: Allocator) void {
+    self.assembly.deinit(self.assembly_gpa);
     self.assembly = .empty;
-    self.assembly_alloc = alloc;
+    self.assembly_gpa = gpa;
 }
 
 pub fn takeAssembly(self: *Parser) Error!NodeList {
@@ -83,7 +83,7 @@ fn checkDigits(self: *Parser) Error!void {
 
 fn getScratch(self: *Parser, depth: u32) Error!*NodeList {
     while (self.scratch.items.len <= depth) {
-        try self.scratch.append(self.work_alloc, .empty);
+        try self.scratch.append(self.work_gpa, .empty);
     }
     var scratch = &self.scratch.items[depth];
     scratch.items.len = 0;
@@ -95,7 +95,7 @@ fn appendToAssembly(self: *Parser, nodes: []const Node) Error![]const Node {
     const needed = self.assembly.items.len + nodes.len;
     if (self.assembly.capacity < needed) {
         const old_ptr = self.assembly.items.ptr;
-        try self.assembly.ensureTotalCapacity(self.assembly_alloc, needed * 4);
+        try self.assembly.ensureTotalCapacity(self.assembly_gpa, needed * 4);
 
         // Track the maximum capacity so that if we give our assembly away we can
         // pre-size the replacement appropriately.
@@ -203,7 +203,7 @@ fn parseArray(self: *Parser, depth: u32) Error!Node {
     } else {
         while (true) {
             const node = try self.parseValue(depth + 1);
-            try scratch.append(self.work_alloc, node);
+            try scratch.append(self.work_gpa, node);
             try self.checkMore();
             const nc = self.state.next();
             if (nc == ']') {
@@ -227,7 +227,7 @@ fn parseObject(self: *Parser, depth: u32) Error!Node {
 
     var scratch = try self.getScratch(depth);
     // Make a space for the class
-    try scratch.append(self.work_alloc, .{ .null = {} });
+    try scratch.append(self.work_gpa, .{ .null = {} });
     var shadow = self.shadow_root.startWalk();
 
     // Empty object is a special case
@@ -236,13 +236,13 @@ fn parseObject(self: *Parser, depth: u32) Error!Node {
     } else {
         while (true) {
             const key = try self.parseKey();
-            shadow = try shadow.getNext(self.work_alloc, key);
+            shadow = try shadow.getNext(self.work_gpa, key);
             try self.checkMore();
             if (self.state.next() != ':')
                 return Error.MissingColon;
 
             const node = try self.parseValue(depth + 1);
-            try scratch.append(self.work_alloc, node);
+            try scratch.append(self.work_gpa, node);
             try self.checkMore();
             const nc = self.state.next();
             if (nc == '}') break;
@@ -255,7 +255,7 @@ fn parseObject(self: *Parser, depth: u32) Error!Node {
     }
 
     // Plug the class in
-    const class = try shadow.getClass(self.work_alloc);
+    const class = try shadow.getClass(self.work_gpa);
     scratch.items[0] = .{ .class = class };
 
     const items = try self.appendToAssembly(scratch.items);
@@ -288,7 +288,7 @@ fn parseMultiNode(self: *Parser, depth: u32) Error!Node {
             if (self.state.eof()) break;
         }
         const node = try self.parseValue(depth + 1);
-        try scratch.append(self.work_alloc, node);
+        try scratch.append(self.work_gpa, node);
     }
 
     const items = try self.appendToAssembly(scratch.items);
@@ -321,14 +321,14 @@ fn parseUsing(
     src: []const u8,
     comptime parser: ParseDepthFn,
 ) Error!Node {
-    try self.assembly.ensureTotalCapacity(self.work_alloc, self.assembly_capacity);
+    try self.assembly.ensureTotalCapacity(self.work_gpa, self.assembly_capacity);
 
     RESTART: while (true) {
         self.startParsing(src);
         defer self.stopParsing();
 
         // A space for the root object
-        try self.assembly.append(self.assembly_alloc, .{ .null = {} });
+        try self.assembly.append(self.assembly_gpa, .{ .null = {} });
 
         const node = parser(self, 0) catch |err| {
             switch (err) {
@@ -352,13 +352,13 @@ fn parseWithAllocator(
     comptime parser: ParseFn,
 ) Error!NodeList {
     const old_assembly = self.assembly;
-    const old_alloc = self.assembly_alloc;
+    const old_alloc = self.assembly_gpa;
     defer {
         self.assembly = old_assembly;
-        self.assembly_alloc = old_alloc;
+        self.assembly_gpa = old_alloc;
     }
     self.assembly = .empty;
-    self.assembly_alloc = alloc;
+    self.assembly_gpa = alloc;
     errdefer self.assembly.deinit(alloc);
     _ = try parser(self, src);
     return self.takeAssembly();
@@ -381,8 +381,8 @@ pub fn parseMultiOwned(self: *Parser, alloc: Allocator, src: []const u8) Error!N
 }
 
 test {
-    const alloc = std.testing.allocator;
-    var p = init(alloc);
+    const gpa = std.testing.allocator;
+    var p = init(gpa);
     defer p.deinit();
 
     const cases = [_][]const u8{
@@ -418,27 +418,27 @@ test {
 
     for (cases) |case| {
         var buf: std.ArrayListUnmanaged(u8) = .empty;
-        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
         defer w.deinit();
 
         const res = try p.parse(case);
         try w.writer.print("{f}", .{res});
         var output = w.toArrayList();
-        defer output.deinit(alloc);
+        defer output.deinit(gpa);
         try std.testing.expect(std.mem.eql(u8, case, output.items));
     }
 
     for (cases) |case| {
         var buf: std.ArrayListUnmanaged(u8) = .empty;
-        var w = std.Io.Writer.Allocating.fromArrayList(alloc, &buf);
+        var w = std.Io.Writer.Allocating.fromArrayList(gpa, &buf);
         defer w.deinit();
 
-        var res = try p.parseOwned(alloc, case);
+        var res = try p.parseOwned(gpa, case);
 
-        defer res.deinit(alloc);
+        defer res.deinit(gpa);
         try w.writer.print("{f}", .{res.items[0]});
         var output = w.toArrayList();
-        defer output.deinit(alloc);
+        defer output.deinit(gpa);
         try std.testing.expect(std.mem.eql(u8, case, output.items));
     }
 }
