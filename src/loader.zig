@@ -63,10 +63,8 @@ pub fn Loader(comptime T: type) type {
                 pub fn load(node: Node, gpa: Allocator) !T {
                     switch (node) {
                         .array, .multi => |a| {
-                            var size = a.len;
                             if (a.len != info.len)
                                 return LoaderError.ArraySizeMismatch;
-                            if (info.sentinel_ptr != null) size += 1;
                             var arr: T = undefined;
                             for (a, 0..) |item, i| {
                                 arr[i] = try ChildLoader.load(item, gpa);
