@@ -212,24 +212,19 @@ pub fn Loader(comptime T: type) type {
                 }
             };
         },
-        .@"enum" => |info| {
-            var kv: [info.fields.len]struct { []const u8, info.tag_type } = undefined;
-            for (info.fields, 0..) |field, i| {
-                kv[i] = .{ field.name, @intCast(field.value) };
-            }
-            const map = StaticStringMap(info.tag_type).initComptime(kv);
+        .@"enum" => {
             return struct {
                 pub fn load(node: Node, gpa: Allocator) !T {
-                    const tag = try switch (node) {
+                    const value = try switch (node) {
                         .json_string => |str| blk: {
                             const out = try string.unescapeAlloc(str, gpa);
                             defer gpa.free(out);
-                            break :blk map.get(out);
+                            break :blk std.meta.stringToEnum(T, out);
                         },
-                        .safe_string, .wild_string => |str| map.get(str),
+                        .safe_string, .wild_string => |str| std.meta.stringToEnum(T, str),
                         else => LoaderError.TypeMismatch,
                     };
-                    if (tag) |t| return @enumFromInt(t);
+                    if (value) |v| return v;
                     return LoaderError.UnknownEnumValue;
                 }
             };
